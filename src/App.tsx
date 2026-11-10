@@ -126,6 +126,20 @@ export function App() {
       {/* 6. Mission Narrative Caption Pill */}
       <MissionCaptionPill progress={scrollProgress} />
 
+      {/* Persistent Skip Launch -> Mission Planner Button */}
+      {scrollProgress < 0.88 && (
+        <button
+          onClick={skipToDashboard}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-950/90 hover:bg-slate-900 text-cyan-300 border border-cyan-500/50 hover:border-cyan-400 font-mono text-xs font-semibold shadow-2xl shadow-cyan-950/50 backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+        >
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+          </span>
+          <span>SKIP LAUNCH ➔ MISSION PLANNER</span>
+        </button>
+      )}
+
       {/* 7. Interactive Production Dashboard (Fades in around lander at bottom of scroll) */}
       <div
         style={{
@@ -150,7 +164,49 @@ export function App() {
             if (canvasRef.current) exportCanvasPng(canvasRef.current, `${store.currentSite.id}-skydome.png`);
           }}
           onReplayLaunch={replayLaunch}
+          onStartGuidedScenario={store.startGuidedScenario}
+          scenarioStep={store.scenarioStep}
         />
+
+        {/* Guided Crisis Scenario Alert Banner */}
+        {store.scenarioStep !== null && (
+          <div className="mx-4 mt-2 p-3 rounded-xl bg-amber-950/85 border border-amber-500/60 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs font-mono shadow-2xl z-30">
+            <div className="flex items-center gap-2.5">
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40">
+                SCENARIO STEP {store.scenarioStep}/3
+              </span>
+              <span className="text-slate-200 text-[11px] font-sans">
+                {store.scenarioStep === 1 && (
+                  <><strong>Nominal Launch:</strong> Evaluating Shackleton Connecting Ridge on July 3, 2026. High polar illumination, but tight lunar summer window.</>
+                )}
+                {store.scenarioStep === 2 && (
+                  <span className="text-amber-200">
+                    <strong>14-Day Launch Slip Delay:</strong> Date slipped to July 17, 2026! Solar shadow duration extends significantly, exceeding battery endurance!
+                  </span>
+                )}
+                {store.scenarioStep === 3 && (
+                  <span className="text-emerald-300">
+                    <strong>Optimal Contingency Found:</strong> Malapert Massif Peak (+5.02 km elevation) retains continuous direct-to-Earth comms and superior sunlight!
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={store.nextGuidedScenarioStep}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-all shadow cursor-pointer"
+              >
+                {store.scenarioStep < 3 ? 'NEXT STEP ➔' : 'FINISH SCENARIO ✓'}
+              </button>
+              <button
+                onClick={store.dismissScenario}
+                className="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-700 cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tab Content */}
         <main className="flex-1 flex min-h-0 relative overflow-hidden" role="main">
@@ -159,7 +215,7 @@ export function App() {
           )}
 
           {store.activeTab === 'timeline' && (
-            <div className="flex-1 flex min-h-0 bg-white/95 dark:bg-space-900/95 backdrop-blur-md z-20">
+            <div className="flex-1 flex min-h-0 bg-slate-950/95 backdrop-blur-md z-20">
               <TimelineTab
                 currentSite={store.currentSite}
                 samples={store.synodicSamples}
@@ -171,7 +227,7 @@ export function App() {
           )}
 
           {store.activeTab === 'compare' && (
-            <div className="flex-1 flex min-h-0 bg-white/95 dark:bg-space-900/95 backdrop-blur-md z-20">
+            <div className="flex-1 flex min-h-0 bg-slate-950/95 backdrop-blur-md z-20">
               <CompareSitesTab
                 allSites={store.allSites}
                 selectedSiteIds={store.compareSiteIds}
@@ -190,12 +246,14 @@ export function App() {
           )}
 
           {store.activeTab === 'analysis' && (
-            <div className="flex-1 flex min-h-0 bg-white/95 dark:bg-space-900/95 backdrop-blur-md z-20">
+            <div className="flex-1 flex min-h-0 bg-slate-950/95 backdrop-blur-md z-20">
               <AnalysisTab
                 currentSite={store.currentSite}
                 allSites={store.allSites}
                 samples={store.synodicSamples}
                 targetDate={store.targetDate}
+                solarArchitecture={store.solarArchitecture}
+                onToggleSolarArchitecture={store.setSolarArchitecture}
                 onSelectSite={(site) => {
                   store.setSite(site);
                   store.setActiveTab('skydome');

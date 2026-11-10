@@ -1,5 +1,14 @@
 import * as Astronomy from 'astronomy-engine';
-import { LandingSite, CelestialBodyPos, EphemerisSample, SiteMetrics, OperationalWindow } from '../types';
+import {
+  LandingSite,
+  CelestialBodyPos,
+  EphemerisSample,
+  SiteMetrics,
+  OperationalWindow,
+  CountdownEvents,
+  SolarArrayArchitecture,
+  LaunchSlipScenario
+} from '../types';
 import { HorizonManager } from '../terrain/horizon';
 
 const DEG2RAD = Math.PI / 180;
@@ -347,5 +356,148 @@ export class EphemerisEngine {
       commRating,
       windows
     };
+  }
+
+  /**
+   * Scans forward from currentDate to determine exact countdown hours and minutes
+   * until the next Terrain Sunset/Sunrise and Earthset/Earthrise events.
+   */
+  public static computeCountdownEvents(
+    site: LandingSite,
+    currentDate: Date,
+    horizonManager?: HorizonManager
+  ): CountdownEvents {
+    const hm = horizonManager || new HorizonManager(site.horizonProfile);
+    const initialPos = this.calculatePosition(site, currentDate, hm);
+    const initialSunBlocked = initialPos.sun.isBlocked;
+    const initialEarthBlocked = initialPos.earth.isBlocked;
+
+    const baseMs = currentDate.getTime();
+    const maxHours = Math.ceil(SYNODIC_MONTH_HOURS);
+    const stepHours = 0.5;
+
+    let sunEventHours: number | null = null;
+    let earthEventHours: number | null = null;
+    let allEarthBlocked = initialEarthBlocked;
+    let allEarthVisible = !initialEarthBlocked;
+
+    for (let h = stepHours; h <= maxHours; h += stepHours) {
+      const tDate = new Date(baseMs + h * 3600 * 1000);
+      const pos = this.calculatePosition(site, tDate, hm);
+
+      if (pos.earth.isBlocked) allEarthVisible = false;
+      else allEarthBlocked = false;
+
+      if (sunEventHours === null && pos.sun.isBlocked !== initialSunBlocked) {
+        sunEventHours = h;
+      }
+      if (earthEventHours === null && pos.earth.isBlocked !== initialEarthBlocked) {
+        earthEventHours = h;
+      }
+
+      if (sunEventHours !== null && earthEventHours !== null) break;
+    }
+
+    const formatCountdown = (hrs: number): string => {
+      const h = Math.floor(hrs);
+      const m = Math.round((hrs - h) * 60);
+      return `${h}h ${m < 10 ? '0' : ''}${m}m`;
+    };
+
+    const sHrs = sunEventHours ?? maxHours;
+    const nextSolarType = initialSunBlocked ? 'sunrise' : 'sunset';
+    const nextSolarDate = new Date(baseMs + sHrs * 3600 * 1000);
+
+    const isPermanentlyOcculted = allEarthBlocked && initialEarthBlocked;
+    const isContinuous = allEarthVisible && !initialEarthBlocked;
+
+    const eHrs = earthEventHours ?? maxHours;
+    const nextEarthType = initialEarthBlocked ? 'earthrise' : 'earthset';
+    const nextEarthDate = new Date(baseMs + eHrs * 3600 * 1000);
+
+    return {
+      nextSolarEvent: {
+        type: nextSolarType,
+        hoursRemaining: sHrs,
+        eventDate: nextSolarDate,
+        formattedCountdown: formatCountdown(sHrs)
+      },
+      nextEarthEvent: {
+        type: nextEarthType,
+        hoursRemaining: eHrs,
+        eventDate: nextEarthDate,
+        formattedCountdown: isContinuous ? 'CONTINUOUS LOS' : isPermanentlyOcculted ? 'OCCULTED' : formatCountdown(eHrs),
+        isContinuous,
+        isPermanentlyOcculted
+      }
+    };
+  }
+
+  /**
+   * Calculates instantaneous solar flux (W/m²) and geometric collection efficiency
+   * comparing Vertical Deployed Polar Array vs Horizontal Deck Array.
+   */
+  public static calculateSolarFlux(
+    elevationDeg: number,
+    isBlocked: boolean,
+    architecture: SolarArrayArchitecture = 'vertical'
+  ): { fluxWm2: number; maxFluxWm2: number; efficiencyFactor: number; description: string } {
+    const SOLAR_CONSTANT_WM2 = 1361.0;
+    const CELL_EFFICIENCY = 0.305; // 30.5% GaInP/GaAs/Ge triple-junction cell efficiency
+    const maxFluxWm2 = Math.round(SOLAR_CONSTANT_WM2 * CELL_EFFICIENCY); // ~415 W/m²
+
+    if (isBlocked || elevationDeg <= 0) {
+      return {
+        fluxWm2: 0,
+        maxFluxWm2,
+        efficiencyFactor: 0,
+        description: isBlocked ? 'Terrain Shadow / Night (0 W/m²)' : 'Sun Below Horizon'
+      };
+    }
+
+    const rad = (elevationDeg * Math.PI) / 180;
+    let factor = 0;
+    let desc = '';
+
+    if (architecture === 'vertical') {
+      // Vertical deployed polar array: captures solar flux parallel to horizon: cos(elevation)
+      factor = Math.cos(rad);
+      desc = `Vertical Polar Array: cos(${elevationDeg.toFixed(1)}°) = ${(factor * 100).toFixed(1)}% geometric yield (optimal for polar grazing sun)`;
+    } else {
+      // Horizontal deck array: captures flux perpendicular to deck: sin(elevation)
+      factor = Math.sin(rad);
+      desc = `Horizontal Deck Array: sin(${elevationDeg.toFixed(1)}°) = ${(factor * 100).toFixed(1)}% geometric yield (severe cosine loss at pole!)`;
+    }
+
+    const fluxWm2 = Math.max(0, Math.round(maxFluxWm2 * factor));
+    return {
+      fluxWm2,
+      maxFluxWm2,
+      efficiencyFactor: Number(factor.toFixed(3)),
+      description: desc
+    };
+  }
+
+  /**
+   * Evaluates launch slip scenarios (+0d, +7d, +14d, +21d) for the same landing site
+   */
+  public static computeLaunchSlipScenarios(
+    site: LandingSite,
+    nominalDate: Date,
+    slipDays: number[] = [0, 7, 14, 21],
+    horizonManager?: HorizonManager
+  ): LaunchSlipScenario[] {
+    const hm = horizonManager || new HorizonManager(site.horizonProfile);
+    return slipDays.map(days => {
+      const epochDate = new Date(nominalDate.getTime() + days * 24 * 3600 * 1000);
+      const metrics = this.computeSiteMetrics(site, epochDate, hm);
+      const label = days === 0 ? 'Nominal Date (T+0)' : `+${days} Days Slip (T+${days}d)`;
+      return {
+        slipDays: days,
+        label,
+        epochDate,
+        metrics
+      };
+    });
   }
 }

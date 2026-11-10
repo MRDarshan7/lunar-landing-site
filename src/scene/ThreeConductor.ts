@@ -55,6 +55,8 @@ export class ThreeConductor {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     // Scene & Camera
     this.scene = new THREE.Scene();
@@ -158,6 +160,10 @@ export class ThreeConductor {
 
   public updateSkyDomePositions(sun: CelestialBodyPos, earth: CelestialBodyPos): void {
     this.skyDome.updatePositions(sun, earth);
+    if (this.currentProgress >= 0.86 && sun.el > -4) {
+      const sunDir = this.skyDome.toCartesian(sun.az, Math.max(0.5, sun.el), 45);
+      this.atmosphere.directionalSun.position.copy(sunDir);
+    }
   }
 
   /**
@@ -201,6 +207,29 @@ export class ThreeConductor {
     // Stars: fade in as atmosphere fades (18% - 40%), stay visible in space
     const starsOpacity = seg(0.18, 0.40) * (1 - seg(0.88, 0.98) * 0.3);
     (this.atmosphere.starfield.material as THREE.PointsMaterial).opacity = starsOpacity;
+
+    // Hard vacuum lighting transition (harsh contrast, near-zero ambient, pure solar key)
+    if (p < 0.55) {
+      const atmoTrans = seg(0.12, 0.35);
+      this.atmosphere.ambientLight.color.setHex(0xdde5f5);
+      this.atmosphere.ambientLight.intensity = THREE.MathUtils.lerp(0.55, 0.18, atmoTrans);
+      this.atmosphere.directionalSun.color.setHex(0xffffff);
+      this.atmosphere.directionalSun.intensity = THREE.MathUtils.lerp(2.5, 3.5, atmoTrans);
+      this.atmosphere.directionalSun.position.set(35, 45, 25);
+      this.atmosphere.rimLight.intensity = (1 - seg(0.20, 0.45)) * 0.8;
+    } else {
+      // Hard vacuum lunar phase: zero atmosphere, cool earthshine tint, intense solar beam
+      const moonTrans = seg(0.55, 0.65);
+      this.atmosphere.ambientLight.color.set(new THREE.Color(0x1a2639));
+      this.atmosphere.ambientLight.intensity = THREE.MathUtils.lerp(0.18, 0.04, moonTrans);
+      this.atmosphere.directionalSun.color.set(new THREE.Color(0xfffdf8));
+      this.atmosphere.directionalSun.intensity = THREE.MathUtils.lerp(3.5, 4.5, moonTrans);
+      if (p < 0.86) {
+        // Low grazing polar sunlight angle during descent
+        this.atmosphere.directionalSun.position.set(28, 14, 32);
+      }
+      this.atmosphere.rimLight.intensity = 0.0;
+    }
 
     // ----------------------------------------------------
     // CRAFT KINEMATICS & WORLD POSITION

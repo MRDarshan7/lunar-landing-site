@@ -9,6 +9,7 @@ export class AtmosphereStars {
   public starfield: THREE.Points;
   public directionalSun: THREE.DirectionalLight;
   public ambientLight: THREE.AmbientLight;
+  public rimLight: THREE.DirectionalLight;
 
   constructor() {
     this.group = new THREE.Group();
@@ -21,23 +22,33 @@ export class AtmosphereStars {
     this.directionalSun = new THREE.DirectionalLight(0xffffff, 2.5);
     this.directionalSun.position.set(35, 45, 25);
     this.directionalSun.castShadow = true;
+    this.directionalSun.shadow.mapSize.width = 2048;
+    this.directionalSun.shadow.mapSize.height = 2048;
+    this.directionalSun.shadow.camera.near = 0.5;
+    this.directionalSun.shadow.camera.far = 300;
+    this.directionalSun.shadow.camera.left = -30;
+    this.directionalSun.shadow.camera.right = 30;
+    this.directionalSun.shadow.camera.top = 30;
+    this.directionalSun.shadow.camera.bottom = -30;
+    this.directionalSun.shadow.bias = -0.0005;
     this.group.add(this.directionalSun);
 
     // Rim light for dramatic aerospace edge highlighting
-    const rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.8);
-    rimLight.position.set(-30, 20, -35);
-    this.group.add(rimLight);
+    this.rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.8);
+    this.rimLight.position.set(-30, 20, -35);
+    this.group.add(this.rimLight);
 
     // 2. Launch Pad & Earth Ground
     this.launchGround = new THREE.Group();
-    const padFloorGeo = new THREE.CylinderGeometry(24, 26, 1.8, 36);
+    const padFloorGeo = new THREE.CylinderGeometry(24, 26, 1.8, 48);
     const padMat = new THREE.MeshStandardMaterial({
-      color: 0x1f232b,
+      color: 0x1a1e26,
       roughness: 0.85,
-      metalness: 0.2
+      metalness: 0.25
     });
     const padFloor = new THREE.Mesh(padFloorGeo, padMat);
     padFloor.position.y = -0.9;
+    padFloor.receiveShadow = true;
     this.launchGround.add(padFloor);
 
     // Launch Gantry Tower
@@ -49,17 +60,20 @@ export class AtmosphereStars {
     });
     const tower = new THREE.Mesh(towerGeo, towerMat);
     tower.position.set(-6.5, 13, -3);
+    tower.castShadow = true;
+    tower.receiveShadow = true;
     this.launchGround.add(tower);
 
     // Gantry Service Swing Arm
     const armGeo = new THREE.BoxGeometry(4.8, 1.0, 1.0);
     const arm = new THREE.Mesh(armGeo, towerMat);
     arm.position.set(-3.8, 20.5, -1.8);
+    arm.castShadow = true;
     this.launchGround.add(arm);
 
     this.group.add(this.launchGround);
 
-    // 3. Cloud Layers (Soft translucent volumetric discs with parallax)
+    // 3. Cloud Layers (Volumetric discs with parallax)
     this.cloudLayers = new THREE.Group();
     const cloudMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -83,7 +97,7 @@ export class AtmosphereStars {
     this.group.add(this.cloudLayers);
 
     // 4. Crisp Cosmic Starfield (Deep space background)
-    const starCount = 4500;
+    const starCount = 5000;
     const starGeo = new THREE.BufferGeometry();
     const starPositions = new Float32Array(starCount * 3);
     const starColors = new Float32Array(starCount * 3);
@@ -116,10 +130,10 @@ export class AtmosphereStars {
     starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
 
     const starMat = new THREE.PointsMaterial({
-      size: 0.28,
+      size: 0.32,
       vertexColors: true,
       transparent: true,
-      opacity: 0.92
+      opacity: 0.95
     });
     this.starfield = new THREE.Points(starGeo, starMat);
     this.group.add(this.starfield);
@@ -166,7 +180,6 @@ export class AtmosphereStars {
     tycho.position.set(0, 4, 21.8);
     this.approachMoon.add(tycho);
 
-    // Position ahead along negative Z
     this.approachMoon.position.set(0, 15, -120);
     this.approachMoon.visible = false;
     this.group.add(this.approachMoon);

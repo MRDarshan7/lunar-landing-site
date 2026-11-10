@@ -84,3 +84,29 @@ export interface DeltaComparison {
   maxShadowDiffHours: number;
   powerScoreDiff: number;
 }
+
+export type SolarArrayArchitecture = 'vertical' | 'horizontal';
+
+export interface CountdownEvents {
+  nextSolarEvent: {
+    type: 'sunset' | 'sunrise';
+    hoursRemaining: number;
+    eventDate: Date;
+    formattedCountdown: string;
+  };
+  nextEarthEvent: {
+    type: 'earthset' | 'earthrise';
+    hoursRemaining: number;
+    eventDate: Date;
+    formattedCountdown: string;
+    isContinuous: boolean;
+    isPermanentlyOcculted: boolean;
+  };
+}
+
+export interface LaunchSlipScenario {
+  slipDays: number;
+  label: string;
+  epochDate: Date;
+  metrics: SiteMetrics;
+}

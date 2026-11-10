@@ -62,12 +62,12 @@ export const SkyDomeTab: React.FC<SkyDomeTabProps> = ({ store, onOpenCustomSite 
 
         {/* Center 3D Sky-Dome Canvas Container (transparent HUD overlay on top of WebGL background) */}
         <div className="flex-1 relative flex flex-col min-h-0">
-          <DomeViewport currentSite={currentSite} metrics={siteMetrics} />
+          <DomeViewport currentSite={currentSite} metrics={siteMetrics} countdownEvents={store.countdownEvents} />
         </div>
 
         {/* Right Sidebar */}
         <div className="hidden md:flex shrink-0">
-          <RightSidebar metrics={siteMetrics} mode={mode} />
+          <RightSidebar metrics={siteMetrics} mode={mode} countdownEvents={store.countdownEvents} />
         </div>
       </div>
 

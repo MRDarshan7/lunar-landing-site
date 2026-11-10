@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { LandingSite, EphemerisSample, SiteMetrics, DeltaComparison } from '../types';
+import { LandingSite, EphemerisSample, SiteMetrics, DeltaComparison, CountdownEvents, SolarArrayArchitecture } from '../types';
 import { CURATED_SITES } from '../terrain/lolaData';
 import { HorizonManager } from '../terrain/horizon';
 import { EphemerisEngine, SYNODIC_MONTH_DAYS } from '../ephemeris/engine';
@@ -26,6 +26,9 @@ export interface AppState {
   synodicSamples: EphemerisSample[];
   siteMetrics: SiteMetrics;
   deltaComparison: DeltaComparison | null;
+  countdownEvents: CountdownEvents;
+  solarArchitecture: SolarArrayArchitecture;
+  scenarioStep: number | null;
 }
 
 const DEFAULT_SITE = CURATED_SITES[0]; // Shackleton Connecting Ridge
@@ -55,6 +58,8 @@ export function useNavigatorStore() {
     'apollo-11'
   ]);
   const [deltaComparison, setDeltaComparison] = useState<DeltaComparison | null>(null);
+  const [solarArchitecture, setSolarArchitecture] = useState<SolarArrayArchitecture>('vertical');
+  const [scenarioStep, setScenarioStep] = useState<number | null>(null);
 
   const allSites = useMemo(() => {
     return [...CURATED_SITES, ...customSites];
@@ -79,6 +84,11 @@ export function useNavigatorStore() {
   // Site Metrics & Operational Windows
   const siteMetrics = useMemo(() => {
     return EphemerisEngine.computeSiteMetrics(currentSite, currentEpochDate, horizonManager);
+  }, [currentSite, currentEpochDate, horizonManager]);
+
+  // Live countdown to next terrain sunset/sunrise & earthset/earthrise
+  const countdownEvents = useMemo(() => {
+    return EphemerisEngine.computeCountdownEvents(currentSite, currentEpochDate, horizonManager);
   }, [currentSite, currentEpochDate, horizonManager]);
 
   // Switching sites with "What changed" delta calculation
@@ -136,6 +146,40 @@ export function useNavigatorStore() {
     }
   }, [theme]);
 
+  // 3-Step Guided Scenario Controller (Launch Slip Crisis Simulation)
+  const startGuidedScenario = useCallback(() => {
+    // Step 1: Nominal landing at Shackleton Connecting Ridge (Site 001)
+    const shackleton = CURATED_SITES[0];
+    setCurrentSiteState(shackleton);
+    setTargetDate(new Date('2026-07-03T12:00:00Z'));
+    setMissionDay(3.0);
+    setActiveTab('skydome');
+    setScenarioStep(1);
+    setIsPlaying(false);
+  }, []);
+
+  const nextGuidedScenarioStep = useCallback(() => {
+    if (scenarioStep === 1) {
+      // Step 2: 14-day launch slip delay -> Target date becomes 2026-07-17
+      setTargetDate(new Date('2026-07-17T12:00:00Z'));
+      setMissionDay(3.0);
+      setActiveTab('timeline'); // View impact on illumination timeline
+      setScenarioStep(2);
+    } else if (scenarioStep === 2) {
+      // Step 3: Multi-site comparison identifies Malapert Massif Peak as the robust backup
+      const malapert = CURATED_SITES.find(s => s.id === 'malapert-massif') || CURATED_SITES[2];
+      setCompareSiteIds(['shackleton-connecting-ridge', 'malapert-massif', 'mons-mouton']);
+      setActiveTab('compare');
+      setScenarioStep(3);
+    } else {
+      setScenarioStep(null);
+    }
+  }, [scenarioStep]);
+
+  const dismissScenario = useCallback(() => {
+    setScenarioStep(null);
+  }, []);
+
   return {
     currentSite,
     allSites,
@@ -153,6 +197,9 @@ export function useNavigatorStore() {
     synodicSamples,
     siteMetrics,
     deltaComparison,
+    countdownEvents,
+    solarArchitecture,
+    scenarioStep,
     setSite,
     addCustomSite,
     setTargetDate,
@@ -164,6 +211,10 @@ export function useNavigatorStore() {
     setTheme,
     setLayers,
     setCompareSiteIds,
+    setSolarArchitecture,
+    startGuidedScenario,
+    nextGuidedScenarioStep,
+    dismissScenario,
     clearDelta: () => setDeltaComparison(null)
   };
 }

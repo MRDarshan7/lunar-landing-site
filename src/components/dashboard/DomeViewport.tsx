@@ -1,57 +1,84 @@
 import React from 'react';
-import { SiteMetrics, LandingSite } from '../../types';
-import { Eye, RotateCcw, ZoomIn } from 'lucide-react';
+import { SiteMetrics, LandingSite, CountdownEvents } from '../../types';
+import { RotateCcw, Clock, Sun, Radio, Activity } from 'lucide-react';
 
 interface DomeViewportProps {
   currentSite: LandingSite;
   metrics: SiteMetrics;
+  countdownEvents?: CountdownEvents;
   onResetView?: () => void;
 }
 
 export const DomeViewport: React.FC<DomeViewportProps> = ({
   currentSite,
   metrics,
+  countdownEvents,
   onResetView
 }) => {
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center select-none pointer-events-none">
       {/* Floating HUD Cardinal & Zenith Labels */}
       <div className="absolute inset-4 pointer-events-none flex flex-col justify-between">
-        {/* Top: Zenith */}
-        <div className="w-full text-center">
-          <span className="px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md border border-slate-700/60 text-[11px] font-mono font-bold text-slate-200 shadow-md">
-            Zenith (90°)
-          </span>
+        {/* Top Header: Mission Clocks & Zenith Indicator */}
+        <div className="w-full flex items-center justify-between pointer-events-auto">
+          {/* Interactive Orbit Hint */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 text-[11px] font-mono text-slate-300 shadow-lg">
+            <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Orbit: Drag · Zoom: Wheel · Lander Centered</span>
+            <span className="sm:hidden">Drag to Orbit</span>
+          </div>
+
+          {/* Central Live Mission-Clock Countdown HUD */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-slate-800 text-xs font-mono shadow-xl">
+              <Sun className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-slate-400 text-[10px] hidden md:inline">
+                {countdownEvents ? `NEXT ${countdownEvents.nextSolarEvent.type.toUpperCase()}:` : 'SOLAR:'}
+              </span>
+              <span className="font-bold text-amber-300 tabular-nums">
+                {countdownEvents ? countdownEvents.nextSolarEvent.formattedCountdown : (metrics.sunInView ? 'SUNLIT' : 'SHADOW')}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-slate-800 text-xs font-mono shadow-xl">
+              <Radio className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-slate-400 text-[10px] hidden md:inline">DTE COMMS:</span>
+              <span className="font-bold text-cyan-300 tabular-nums">
+                {countdownEvents ? countdownEvents.nextEarthEvent.formattedCountdown : (metrics.earthInView ? 'LINK OPEN' : 'BLACKOUT')}
+              </span>
+            </div>
+          </div>
+
+          {/* Zenith Indicator */}
+          <div>
+            <span className="px-3 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 text-[11px] font-mono font-bold text-slate-300 shadow-md">
+              Zenith (90°)
+            </span>
+          </div>
         </div>
 
         {/* Center compass indicators */}
         <div className="flex justify-between items-center px-4 text-xs font-mono font-semibold text-slate-400">
-          <span className="px-2 py-0.5 rounded bg-black/40 backdrop-blur-sm border border-slate-700/40">
+          <span className="px-2.5 py-1 rounded-lg bg-slate-950/70 backdrop-blur-md border border-slate-800 shadow">
             270° W
           </span>
-          <span className="px-2 py-0.5 rounded bg-black/40 backdrop-blur-sm border border-slate-700/40">
+          <span className="px-2.5 py-1 rounded-lg bg-slate-950/70 backdrop-blur-md border border-slate-800 shadow">
             90° E
           </span>
         </div>
 
         {/* Bottom Cardinal Indicator */}
         <div className="flex justify-between items-center px-4 text-xs font-mono font-semibold text-slate-400">
-          <span className="px-2 py-0.5 rounded bg-black/40 backdrop-blur-sm border border-slate-700/40">
-            0° N
+          <span className="px-2.5 py-1 rounded-lg bg-slate-950/70 backdrop-blur-md border border-slate-800 shadow">
+            0° N (Earthward)
           </span>
-          <span className="px-2 py-0.5 rounded bg-black/40 backdrop-blur-sm border border-slate-700/40">
+          <span className="px-2.5 py-1 rounded-lg bg-slate-950/70 backdrop-blur-md border border-slate-800 shadow">
             180° S
           </span>
         </div>
       </div>
 
-      {/* Interactive Orbit Hint */}
-      <div className="absolute top-4 left-4 pointer-events-auto flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-[11px] text-slate-300 shadow-md">
-        <RotateCcw className="w-3.5 h-3.5 text-blue-400 animate-spin-slow" />
-        <span>Drag to Orbit · Scroll to Zoom · Lander Centered</span>
-      </div>
-
-      {/* Accessible Screen-Reader Alternative Table (Visually hidden or expandable) */}
+      {/* Accessible Screen-Reader Alternative Table */}
       <div className="sr-only">
         <h2>Accessible Line of Sight Telemetry Table</h2>
         <table>
