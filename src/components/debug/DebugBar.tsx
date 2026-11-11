@@ -40,7 +40,7 @@ export const DebugBar: React.FC<DebugBarProps> = ({
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-3 right-3 z-50 p-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs shadow-lg flex items-center gap-1.5"
+        className="fixed top-16 right-4 z-50 p-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg flex items-center gap-1.5 transition-all"
         title="Open Debug Toolbar"
       >
         <Bug className="w-4 h-4" />
@@ -50,7 +50,7 @@ export const DebugBar: React.FC<DebugBarProps> = ({
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-96 p-3.5 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-amber-500/50 shadow-2xl text-xs font-mono text-slate-200 select-none">
+    <div className="fixed top-16 right-4 z-50 w-96 max-w-[calc(100vw-2rem)] p-3.5 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-amber-500/50 shadow-2xl text-xs font-mono text-slate-200 select-none">
       {/* Header */}
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-700">
         <div className="flex items-center gap-2 text-amber-400 font-bold">

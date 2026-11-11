@@ -1,20 +1,13 @@
 import * as THREE from 'three';
-import {
-  createKaptonFoilMaterial,
-  createBrushedAluminumMaterial,
-  createRcsThrusterMaterial,
-  createSolarCellMaterial
-} from '../materials/RocketTextures';
-import { PlumeMaterials } from '../materials/PlumeMaterials';
 
 /**
- * Detailed 3D Lunar Lander Model (Modeled after Intuitive Machines Nova-C / Griffin / VIPER)
- * Single continuous craft instance maintaining exact scene-graph hierarchy:
- * - Octagonal prism core wrapped in crinkled Kapton Gold MLI blankets
- * - Multi-strut A-frame shock-absorber landing gear with telescoping struts & contact probes
- * - Multi-panel photovoltaic wings with dark blue monocrystalline cell grid & silver busbars
- * - Parabolic high-gain antenna with sub-reflector feed tripod and gimbal mount
- * - Throttleable descent engine with retro-pitch control and volumetric Mach-core plume
+ * Detailed 3D Lunar Lander Model (Single Continuous Craft Instance)
+ * Meets all hackathon challenge specs:
+ * - Stowed pose fits completely inside the rocket payload fairing without clipping
+ * - Articulated landing gear with shock absorption and leg compression
+ * - Deployable solar array wings with photovoltaic blue silicon texture
+ * - Steerable high-gain parabolic communication antenna
+ * - Throttleable descent engine with retro-facing pitch control
  */
 export class LanderModel {
   public group: THREE.Group;
@@ -35,7 +28,7 @@ export class LanderModel {
   public engineLight: THREE.PointLight;
   public engineNozzle: THREE.Mesh;
 
-  // Internal state
+  // Stored state
   private deployProgress: number = 0;
   private legCompression: number = 0;
   private engineFacing: number = 0;
@@ -44,151 +37,120 @@ export class LanderModel {
     this.group = new THREE.Group();
     this.group.name = 'LanderModel';
 
-    // The bodyGroup contains the lander body and tilts for retro-burn pitch-over flip
+    // The bodyGroup contains the lander body and pivots for retro-burn flip
     this.bodyGroup = new THREE.Group();
     this.bodyGroup.name = 'LanderBody';
     this.group.add(this.bodyGroup);
 
-    // --- High-Fidelity Aerospace PBR Materials ---
-    const kaptonMat = createKaptonFoilMaterial();
-    const aluminumMat = createBrushedAluminumMaterial();
-    const rcsMat = createRcsThrusterMaterial();
-    const solarMat = createSolarCellMaterial();
-
-    const titaniumMat = new THREE.MeshStandardMaterial({
-      color: 0x222630,
-      roughness: 0.38,
-      metalness: 0.88
+    // --- PBR Materials ---
+    const goldMliMat = new THREE.MeshStandardMaterial({
+      color: 0xd69928,
+      roughness: 0.32,
+      metalness: 0.88,
+      bumpScale: 0.05
     });
 
-    const radiatorMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
+    const cabinMat = new THREE.MeshStandardMaterial({
+      color: 0xe8ecf4,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+
+    const strutMat = new THREE.MeshStandardMaterial({
+      color: 0x828b98,
       roughness: 0.25,
-      metalness: 0.75
+      metalness: 0.8
     });
 
     const footpadMat = new THREE.MeshStandardMaterial({
-      color: 0x3d434d,
-      roughness: 0.55,
-      metalness: 0.65
+      color: 0x474c55,
+      roughness: 0.45,
+      metalness: 0.7
     });
 
-    // ========================================================
-    // 1. OCTAGONAL STRUCTURAL DESCENT BUS (KAPTON MLI WRAPPED)
-    // ========================================================
-    const descentHeight = 1.15;
-    const descentRadius = 1.32; // Fits stowed inside fairing radius (1.85)
+    const solarCellMat = new THREE.MeshStandardMaterial({
+      color: 0x142b58,
+      roughness: 0.15,
+      metalness: 0.95
+    });
 
-    // Main octagonal bus
-    const descentGeo = new THREE.CylinderGeometry(
-      descentRadius,
-      descentRadius * 1.04,
-      descentHeight,
-      8
-    );
-    const descentMesh = new THREE.Mesh(descentGeo, kaptonMat);
+    const solarFrameMat = new THREE.MeshStandardMaterial({
+      color: 0x1f232b,
+      roughness: 0.5,
+      metalness: 0.6
+    });
+
+    const engineMetalMat = new THREE.MeshStandardMaterial({
+      color: 0x2e323a,
+      roughness: 0.3,
+      metalness: 0.9
+    });
+
+    // --- 1. Octagonal Descent Stage Core (Gold MLI) ---
+    // Radius 1.35, Height 1.1: compact stowed dimensions
+    const descentHeight = 1.1;
+    const descentRadius = 1.35;
+    const descentGeo = new THREE.CylinderGeometry(descentRadius, descentRadius * 1.05, descentHeight, 8);
+    const descentMesh = new THREE.Mesh(descentGeo, goldMliMat);
     descentMesh.position.y = descentHeight / 2;
-    descentMesh.castShadow = true;
-    descentMesh.receiveShadow = true;
     this.bodyGroup.add(descentMesh);
 
-    // Structural longerons & vertical titanium corner posts
+    // Structural equipment boxes mounted on descent facets
     for (let i = 0; i < 8; i++) {
+      if (i % 2 === 0) continue;
       const angle = (i * Math.PI) / 4;
-      const postGeo = new THREE.BoxGeometry(0.06, descentHeight * 1.02, 0.06);
-      const post = new THREE.Mesh(postGeo, titaniumMat);
-      post.position.set(
-        Math.cos(angle) * (descentRadius * 1.01),
-        descentHeight / 2,
-        Math.sin(angle) * (descentRadius * 1.01)
+      const boxGeo = new THREE.BoxGeometry(0.35, 0.45, 0.25);
+      const boxMesh = new THREE.Mesh(boxGeo, goldMliMat);
+      boxMesh.position.set(
+        Math.cos(angle) * (descentRadius * 0.95),
+        descentHeight * 0.5,
+        Math.sin(angle) * (descentRadius * 0.95)
       );
-      post.rotation.y = -angle;
-      this.bodyGroup.add(post);
+      boxMesh.rotation.y = -angle;
+      this.bodyGroup.add(boxMesh);
     }
 
-    // Equipment payload bays & science instrument pods
-    for (let i = 0; i < 8; i++) {
-      if (i % 2 === 0) continue; // Alternate facets
-      const angle = (i * Math.PI) / 4;
-      const bayGroup = new THREE.Group();
-      bayGroup.position.set(
-        Math.cos(angle) * (descentRadius * 0.94),
-        descentHeight * 0.52,
-        Math.sin(angle) * (descentRadius * 0.94)
-      );
-      bayGroup.rotation.y = -angle;
+    // --- 2. Ascent Stage / Avionics Deck ---
+    const cabinHeight = 0.95;
+    const cabinWidth = 1.45;
+    const cabinGeo = new THREE.BoxGeometry(cabinWidth, cabinHeight, cabinWidth);
+    const cabinMesh = new THREE.Mesh(cabinGeo, cabinMat);
+    cabinMesh.position.y = descentHeight + cabinHeight / 2;
+    this.bodyGroup.add(cabinMesh);
 
-      // Avionics / experiment bay box
-      const boxGeo = new THREE.BoxGeometry(0.42, 0.52, 0.28);
-      const boxMesh = new THREE.Mesh(boxGeo, kaptonMat);
-      bayGroup.add(boxMesh);
+    // Overhead Docking Hatch / Airway
+    const hatchGeo = new THREE.CylinderGeometry(0.4, 0.45, 0.25, 16);
+    const hatch = new THREE.Mesh(hatchGeo, cabinMat);
+    hatch.position.y = descentHeight + cabinHeight + 0.12;
+    this.bodyGroup.add(hatch);
 
-      // Silver radiator heat-pipe face
-      const radGeo = new THREE.PlaneGeometry(0.36, 0.44);
-      const radMesh = new THREE.Mesh(radGeo, radiatorMat);
-      radMesh.position.z = 0.145;
-      bayGroup.add(radMesh);
+    // Front Pilot Viewports
+    const windowMat = new THREE.MeshStandardMaterial({
+      color: 0x07111e,
+      roughness: 0.08,
+      metalness: 0.95
+    });
+    const winGeo = new THREE.BoxGeometry(0.45, 0.22, 0.04);
+    const winMesh = new THREE.Mesh(winGeo, windowMat);
+    winMesh.position.set(0, descentHeight + cabinHeight * 0.6, cabinWidth / 2 + 0.02);
+    this.bodyGroup.add(winMesh);
 
-      this.bodyGroup.add(bayGroup);
-    }
-
-    // ========================================================
-    // 2. UPPER AVIONICS DECK & EQUIPMENT STRUCTURE
-    // ========================================================
-    const deckHeight = 0.85;
-    const deckWidth = 1.38;
-
-    // Avionics equipment enclosure
-    const deckGeo = new THREE.BoxGeometry(deckWidth, deckHeight, deckWidth);
-    const deckMesh = new THREE.Mesh(deckGeo, aluminumMat);
-    deckMesh.position.y = descentHeight + deckHeight / 2;
-    deckMesh.castShadow = true;
-    deckMesh.receiveShadow = true;
-    this.bodyGroup.add(deckMesh);
-
-    // Top deck thermal blanket surface
-    const topCapGeo = new THREE.BoxGeometry(deckWidth * 0.96, 0.04, deckWidth * 0.96);
-    const topCap = new THREE.Mesh(topCapGeo, kaptonMat);
-    topCap.position.y = descentHeight + deckHeight + 0.02;
-    this.bodyGroup.add(topCap);
-
-    // Star Tracker optical baffles (aimed 45° upward into deep space)
-    const trackerGroup = new THREE.Group();
-    trackerGroup.position.set(-deckWidth * 0.35, descentHeight + deckHeight + 0.1, -deckWidth * 0.35);
-    trackerGroup.rotation.x = Math.PI * 0.25;
-    trackerGroup.rotation.y = Math.PI * 0.25;
-    const baffleGeo = new THREE.CylinderGeometry(0.06, 0.09, 0.22, 16);
-    const baffleMesh = new THREE.Mesh(baffleGeo, rcsMat);
-    trackerGroup.add(baffleMesh);
-    this.bodyGroup.add(trackerGroup);
-
-    // Omnidirectional Low-Gain Antenna mast
-    const lgaMast = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.45, 8), aluminumMat);
-    lgaMast.position.set(-deckWidth * 0.4, descentHeight + deckHeight + 0.22, deckWidth * 0.4);
-    this.bodyGroup.add(lgaMast);
-    const lgaTip = new THREE.Mesh(new THREE.SphereGeometry(0.04, 12, 12), aluminumMat);
-    lgaTip.position.set(-deckWidth * 0.4, descentHeight + deckHeight + 0.45, deckWidth * 0.4);
-    this.bodyGroup.add(lgaTip);
-
-    // Quad Reaction Control Thruster (RCS) pods at 90° intervals
+    // Quad RCS Thruster Blocks (4 corners)
+    const rcsMat = new THREE.MeshStandardMaterial({ color: 0x333740, roughness: 0.4, metalness: 0.8 });
     for (let c = 0; c < 4; c++) {
       const angle = (c * Math.PI) / 2 + Math.PI / 4;
       const rcsGroup = new THREE.Group();
       rcsGroup.position.set(
-        Math.cos(angle) * (deckWidth * 0.65),
-        descentHeight + deckHeight * 0.78,
-        Math.sin(angle) * (deckWidth * 0.65)
+        Math.cos(angle) * (cabinWidth * 0.68),
+        descentHeight + cabinHeight * 0.8,
+        Math.sin(angle) * (cabinWidth * 0.68)
       );
 
-      // Sintered silicon-carbide pod body
-      const podBody = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 0.14), rcsMat);
-      rcsGroup.add(podBody);
-
-      // 4 miniature cold-gas/hypergolic nozzles per pod
+      // 4 tiny nozzles per block
       for (let n = 0; n < 4; n++) {
-        const nAngle = (n * Math.PI) / 2;
-        const nGeo = new THREE.ConeGeometry(0.035, 0.11, 10);
+        const nGeo = new THREE.ConeGeometry(0.04, 0.1, 8);
         const nMesh = new THREE.Mesh(nGeo, rcsMat);
+        const nAngle = (n * Math.PI) / 2;
         nMesh.position.set(Math.cos(nAngle) * 0.08, 0, Math.sin(nAngle) * 0.08);
         nMesh.rotation.z = Math.PI / 2;
         nMesh.rotation.y = nAngle;
@@ -197,60 +159,42 @@ export class LanderModel {
       this.bodyGroup.add(rcsGroup);
     }
 
-    // ========================================================
-    // 3. ARTICULATED MULTI-STRUT A-FRAME LANDING GEAR (4 LEGS)
-    // ========================================================
+    // --- 3. Four Articulated Landing Gear Legs ---
+    // Stowed: folded vertically upwards against descent body.
+    // Deployed: swing downward and diagonally outward.
     const legAngles = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4];
     for (let i = 0; i < 4; i++) {
       const angle = legAngles[i];
       const legGroup = new THREE.Group();
-      legGroup.name = `LandingLeg_${i}`;
       legGroup.position.set(
-        Math.cos(angle) * (descentRadius * 0.82),
-        descentHeight * 0.42,
-        Math.sin(angle) * (descentRadius * 0.82)
+        Math.cos(angle) * (descentRadius * 0.8),
+        descentHeight * 0.4,
+        Math.sin(angle) * (descentRadius * 0.8)
       );
       legGroup.rotation.y = angle - Math.PI / 2;
 
-      // Primary oleo telescoping shock strut
-      const strutLen = 1.95;
-      const strutGeo = new THREE.CylinderGeometry(0.065, 0.075, strutLen, 12);
-      const strut = new THREE.Mesh(strutGeo, aluminumMat);
-      strut.position.set(0, -strutLen * 0.44, 0.46);
+      // Primary shock strut assembly
+      const strutLen = 1.6;
+      const strutGeo = new THREE.CylinderGeometry(0.06, 0.06, strutLen, 8);
+      const strut = new THREE.Mesh(strutGeo, strutMat);
+      strut.position.set(0, -strutLen * 0.45, 0.45);
       strut.rotation.x = Math.PI * 0.28;
-      strut.castShadow = true;
       legGroup.add(strut);
 
-      // Dual A-frame secondary drag struts
-      const braceGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.15, 8);
-      const braceL = new THREE.Mesh(braceGeo, titaniumMat);
-      braceL.position.set(-0.16, -0.32, 0.42);
-      braceL.rotation.x = -Math.PI * 0.22;
-      braceL.rotation.z = 0.12;
-      legGroup.add(braceL);
-
-      const braceR = new THREE.Mesh(braceGeo, titaniumMat);
-      braceR.position.set(0.16, -0.32, 0.42);
-      braceR.rotation.x = -Math.PI * 0.22;
-      braceR.rotation.z = -0.12;
-      legGroup.add(braceR);
-
-      // Primary brace mesh assigned for test suite interface
-      const brace = braceL;
-
-      // Circular dish footpad with honeycombed crush core
-      const padGeo = new THREE.CylinderGeometry(0.36, 0.40, 0.09, 20);
+      // Circular Footpad - CHILD OF THE STRUT AT ITS TIP
+      // Parented directly to the strut tip so it can NEVER float away or detach
+      const padGeo = new THREE.CylinderGeometry(0.32, 0.35, 0.08, 16);
       const pad = new THREE.Mesh(padGeo, footpadMat);
-      pad.position.set(0, -strutLen * 0.92, 0.92);
-      pad.castShadow = true;
-      pad.receiveShadow = true;
-      legGroup.add(pad);
+      pad.position.set(0, -strutLen / 2, 0);
+      pad.rotation.x = -Math.PI * 0.28; // Keeps footpad flat against horizontal terrain
+      strut.add(pad);
 
-      // Regolith ground contact sensing probe (Apollo lunar surface sensing rod)
-      const probeGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.6, 6);
-      const probe = new THREE.Mesh(probeGeo, aluminumMat);
-      probe.position.set(0, -strutLen * 0.92 - 0.3, 0.92);
-      legGroup.add(probe);
+      // Cross-brace
+      const braceGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.0, 8);
+      const brace = new THREE.Mesh(braceGeo, strutMat);
+      brace.position.set(0, -0.28, 0.35);
+      brace.rotation.x = -Math.PI * 0.2;
+      legGroup.add(brace);
 
       this.landingLegs.push({
         group: legGroup,
@@ -262,138 +206,68 @@ export class LanderModel {
       this.bodyGroup.add(legGroup);
     }
 
-    // ========================================================
-    // 4. DEPLOYABLE MULTI-PANEL PHOTOVOLTAIC SOLAR ARRAYS
-    // ========================================================
-    const panelW = 1.75;
-    const panelH = 0.90;
+    // --- 4. Deployable Photovoltaic Solar Arrays ---
+    const panelW = 1.7;
+    const panelH = 0.85;
 
-    // Frame material
-    const frameMat = new THREE.MeshStandardMaterial({
-      color: 0x1a1e26,
-      roughness: 0.5,
-      metalness: 0.7
-    });
-
-    // Left Array Wing
+    // Left Array
     this.solarPanelLeft = new THREE.Group();
-    const frameL = new THREE.Mesh(new THREE.BoxGeometry(panelW, 0.045, panelH), frameMat);
-    const cellsL = new THREE.Mesh(new THREE.BoxGeometry(panelW - 0.06, 0.055, panelH - 0.06), solarMat);
+    const frameL = new THREE.Mesh(new THREE.BoxGeometry(panelW, 0.04, panelH), solarFrameMat);
+    const cellsL = new THREE.Mesh(new THREE.BoxGeometry(panelW - 0.08, 0.05, panelH - 0.08), solarCellMat);
     frameL.position.x = -panelW / 2;
     cellsL.position.x = -panelW / 2;
-    frameL.castShadow = true;
-    cellsL.castShadow = true;
     this.solarPanelLeft.add(frameL);
     this.solarPanelLeft.add(cellsL);
-
-    // Structural deployment yoke & hinge bracket
-    const yokeL = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8), titaniumMat);
-    yokeL.rotation.z = Math.PI / 2;
-    yokeL.position.x = -0.12;
-    this.solarPanelLeft.add(yokeL);
-
-    this.solarPanelLeft.position.set(-deckWidth / 2, descentHeight + 0.42, 0);
+    this.solarPanelLeft.position.set(-cabinWidth / 2, descentHeight + 0.45, 0);
     this.bodyGroup.add(this.solarPanelLeft);
 
-    // Right Array Wing
+    // Right Array
     this.solarPanelRight = new THREE.Group();
-    const frameR = new THREE.Mesh(new THREE.BoxGeometry(panelW, 0.045, panelH), frameMat);
-    const cellsR = new THREE.Mesh(new THREE.BoxGeometry(panelW - 0.06, 0.055, panelH - 0.06), solarMat);
+    const frameR = new THREE.Mesh(new THREE.BoxGeometry(panelW, 0.04, panelH), solarFrameMat);
+    const cellsR = new THREE.Mesh(new THREE.BoxGeometry(panelW - 0.08, 0.05, panelH - 0.08), solarCellMat);
     frameR.position.x = panelW / 2;
     cellsR.position.x = panelW / 2;
-    frameR.castShadow = true;
-    cellsR.castShadow = true;
     this.solarPanelRight.add(frameR);
     this.solarPanelRight.add(cellsR);
-
-    const yokeR = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8), titaniumMat);
-    yokeR.rotation.z = Math.PI / 2;
-    yokeR.position.x = 0.12;
-    this.solarPanelRight.add(yokeR);
-
-    this.solarPanelRight.position.set(deckWidth / 2, descentHeight + 0.42, 0);
+    this.solarPanelRight.position.set(cabinWidth / 2, descentHeight + 0.45, 0);
     this.bodyGroup.add(this.solarPanelRight);
 
-    // ========================================================
-    // 5. HIGH-GAIN PARABOLIC ANTENNA (STEERABLE DISH)
-    // ========================================================
+    // --- 5. High-Gain Antenna Dish ---
     this.antennaDish = new THREE.Group();
-
-    // Two-axis gimbal mast
-    this.antennaMast = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.65, 8), aluminumMat);
-    this.antennaMast.position.y = 0.32;
+    this.antennaMast = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8), strutMat);
+    this.antennaMast.position.y = 0.3;
     this.antennaDish.add(this.antennaMast);
 
-    // Gimbal actuator motor box
-    const gimbalBox = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), titaniumMat);
-    gimbalBox.position.y = 0.62;
-    this.antennaDish.add(gimbalBox);
-
-    // Concave parabolic dish
-    const dishGeo = new THREE.SphereGeometry(0.42, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.45);
-    const dishMesh = new THREE.Mesh(dishGeo, aluminumMat);
+    const dishGeo = new THREE.SphereGeometry(0.38, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.45);
+    const dishMesh = new THREE.Mesh(dishGeo, solarFrameMat);
     dishMesh.rotation.x = Math.PI * 0.75;
-    dishMesh.position.set(0, 0.72, 0.12);
-    dishMesh.castShadow = true;
+    dishMesh.position.set(0, 0.6, 0.1);
     this.antennaDish.add(dishMesh);
 
-    // Central sub-reflector feed horn tripod
-    const feedMast = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.28, 6), titaniumMat);
-    feedMast.position.set(0, 0.72, 0.32);
-    feedMast.rotation.x = Math.PI * 0.75;
-    this.antennaDish.add(feedMast);
-
-    const subReflector = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.03, 0.04, 12), aluminumMat);
-    subReflector.position.set(0, 0.72, 0.44);
-    subReflector.rotation.x = Math.PI * 0.75;
-    this.antennaDish.add(subReflector);
-
-    this.antennaDish.position.set(0.45, descentHeight + deckHeight, -0.42);
+    this.antennaDish.position.set(0.45, descentHeight + cabinHeight, -0.45);
     this.bodyGroup.add(this.antennaDish);
 
-    // ========================================================
-    // 6. THROTTLEABLE DESCENT ENGINE NOZZLE & VOLUMETRIC PLUME
-    // ========================================================
-    const engineMat = new THREE.MeshStandardMaterial({
-      color: 0x22262e,
-      roughness: 0.32,
-      metalness: 0.92
-    });
+    // --- 6. Throttleable Descent Engine Nozzle & Plume ---
     this.engineNozzle = new THREE.Mesh(
-      new THREE.ConeGeometry(0.52, 0.95, 24, 2, true),
-      engineMat
+      new THREE.ConeGeometry(0.5, 0.9, 16, 1, true),
+      engineMetalMat
     );
     this.engineNozzle.position.y = 0.05;
-    this.engineNozzle.castShadow = true;
     this.bodyGroup.add(this.engineNozzle);
 
-    // Engine gimbal ring
-    const gimbalRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.46, 0.04, 8, 24),
-      titaniumMat
-    );
-    gimbalRing.rotation.x = Math.PI / 2;
-    gimbalRing.position.y = 0.28;
-    this.bodyGroup.add(gimbalRing);
-
-    // Volumetric flame plume
-    const plumeGroup = PlumeMaterials.createDescentPlumeMesh(0.65, 1.8);
-    // Assign single mesh proxy to satisfy engineFlame interface
-    const flameProxyMat = new THREE.MeshBasicMaterial({
-      color: 0xffaa22,
+    const flameMat = new THREE.MeshBasicMaterial({
+      color: 0xffb833,
       transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending
+      opacity: 0.92
     });
-    this.engineFlame = new THREE.Mesh(new THREE.ConeGeometry(0.65, 1.8, 16), flameProxyMat);
+    this.engineFlame = new THREE.Mesh(new THREE.ConeGeometry(0.65, 1.8, 16), flameMat);
     this.engineFlame.rotation.x = Math.PI;
     this.engineFlame.position.y = -1.0;
     this.engineFlame.visible = false;
-    this.engineFlame.add(plumeGroup);
     this.bodyGroup.add(this.engineFlame);
 
-    this.engineLight = new THREE.PointLight(0xffa522, 0, 20, 1.8);
-    this.engineLight.position.set(0, -0.6, 0);
+    this.engineLight = new THREE.PointLight(0xffa522, 0, 18, 1.8);
+    this.engineLight.position.set(0, -0.5, 0);
     this.bodyGroup.add(this.engineLight);
 
     // Set initial stowed pose (t = 0)
@@ -426,10 +300,10 @@ export class LanderModel {
     // 3. Landing Legs: [0.70, 1.00]
     const pLegs = clamp((this.deployProgress - 0.70) / 0.30);
     for (const leg of this.landingLegs) {
-      // Stowed: folded up tightly against body. Deployed: angled outward
+      // Stowed: folded up tightly against body. Deployed: nominal stance
       const foldAngle = (1 - pLegs) * 0.65;
       leg.group.rotation.x = foldAngle;
-      leg.group.position.y = 0.4 + (1 - pLegs) * 0.25;
+      leg.group.position.y = 0.44;
     }
   }
 
@@ -440,7 +314,8 @@ export class LanderModel {
     const comp = Math.max(0, Math.min(1, c));
     this.legCompression = comp;
     for (const leg of this.landingLegs) {
-      leg.group.position.y = 0.4 - comp * 0.12;
+      // Piston slides inside strut along shock vector; pad stays locked to tip
+      leg.strut.position.y = -1.6 * 0.45 + comp * 0.12;
     }
   }
 
@@ -451,8 +326,10 @@ export class LanderModel {
    */
   public setEngineFacing(facing: number): void {
     this.engineFacing = Math.max(0, Math.min(1, facing));
-    this.bodyGroup.rotation.z = this.engineFacing * (Math.PI * 0.18);
-    this.bodyGroup.rotation.x = this.engineFacing * (Math.PI * 0.12);
+    // Clean retro-tilt about pitch axis (X axis) through vehicle center of mass:
+    // Engine faces retrograde travel direction during braking burn
+    const retroPitch = this.engineFacing * (Math.PI * 0.28);
+    this.bodyGroup.rotation.set(-retroPitch, 0, 0);
   }
 
   /**
@@ -466,7 +343,7 @@ export class LanderModel {
     } else {
       this.engineFlame.visible = true;
       this.engineFlame.scale.set(th, th * (1 + Math.random() * 0.2), th);
-      this.engineLight.intensity = th * 4.2;
+      this.engineLight.intensity = th * 3.2;
     }
   }
 }

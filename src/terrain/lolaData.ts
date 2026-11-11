@@ -1,9 +1,18 @@
 import { LandingSite } from '../types';
 
 /**
- * Generate high-precision LOLA (Lunar Orbiter Laser Altimeter) topography horizon profiles.
+ * Calibrated analytical topography horizon profiles approximating LOLA (Lunar Orbiter Laser Altimeter) polar DEMs.
  * Each profile contains 360 elevation values (in degrees) from azimuth 0° (North) clockwise to 359°.
- * Values accurately reflect actual LOLA polar DEM (LDEM_75S_120M) and SLDEM2015 topography.
+ *
+ * NOTE ON DATA FIDELITY (APPROXIMATE vs REAL):
+ * These pre-bundled profiles are calibrated approximations parameterized from published LOLA topographic feature
+ * surveys (massifs, crater rim heights, slopes, and crater bowls) to ensure instant zero-latency client-side execution.
+ * They are explicitly marked with `isApproximateTerrain: true` in the application state and UI.
+ *
+ * For raw scientific DEM raycasts:
+ * Users can export 360-ray horizons from NASA Moon Trek (trek.nasa.gov) or LROC QuickMap (quickmap.lroc.asu.edu),
+ * or run `node scripts/extractLolaHorizon.js` against raw NASA PDS LOLA LDEM GeoTIFFs,
+ * and load them directly via "+ Custom Site".
  */
 function generateRealisticLolaProfile(
   features: Array<{ az: number; width: number; height: number; roughness?: number }>,

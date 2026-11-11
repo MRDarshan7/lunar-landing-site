@@ -20,7 +20,16 @@ Open [http://localhost:5173](http://localhost:5173) in your browser. Add `?debug
 ```bash
 npm test
 ```
-Executes all 11 automated Vitest tests across ephemeris accuracy, LOLA occlusion, and complete 3D scene continuity/reversibility.
+Executes all 13 automated Vitest tests across ephemeris accuracy, LOLA occlusion, and complete 3D scene continuity/reversibility.
+
+### Offline Scripts
+```bash
+# Query live NASA JPL Horizons REST API (DE441 topocentric ephemerides)
+node scripts/queryHorizons.js
+
+# Raycast 360-degree horizon profiles from LOLA polar DEM parameters
+node scripts/extractLolaHorizon.js --lat=-89.78 --lon=129.2 --out=scripts/extracted_horizon.json
+```
 
 ### Production Static Build
 ```bash
@@ -68,22 +77,24 @@ CraftRig
 
 ## 🧪 Automated Verification & Scene Tests (Vitest)
 
-All 11 automated test suites execute in headless environments (no WebGL required) evaluating Three.js transformation matrices directly:
+All 13 automated test suites execute in headless environments (no WebGL required) evaluating Three.js transformation matrices directly:
 
 ```
- ✓ src/scene/__tests__/sceneContinuity.test.ts (6 tests)
-   ✓ a) lander exists in the scene graph at every p and world position never jumps more than threshold
-   ✓ b) lander is outside the fairing bounds only when fairing halves have separated
-   ✓ c) each debris item distance from the camera is non-decreasing after separation
-   ✓ d) camera pitch stays within a set horizontal range through the descent (no downward pan)
-   ✓ e) altitude telemetry is monotonic up to lander release and speed is monotonic down during descent
-   ✓ f) forward and reverse sweeps give identical transforms for the same p (reversibility)
+ ✓ src/scene/__tests__/sceneContinuity.test.ts (8 tests)
+   ✓ a) lander exists in scene graph at every p and world position never jumps more than tight threshold
+   ✓ regression test: proving that old 26-unit jump fails the continuity threshold
+   ✓ b) lander is inside fairing bounds before separation and clearly visible after jettison (p=0.50, 0.52, 0.55, 0.58)
+   ✓ c) frustum fitting: full rocket from nose to engines plus pad is visible at p=0 for 16:10, 16:9, and 9:16
+   ✓ d) camera pitch stays strictly within [-0.05, 0.22] rad throughout powered descent (p=0.62 to 0.84)
+   ✓ e) liftoff camera shake is a deterministic function of p (100% reproducible)
+   ✓ f) altitude telemetry is monotonic up to lander release and speed is monotonic down during descent
+   ✓ g) forward and reverse sweeps give identical transforms for same p (100% reversible)
 
  ✓ src/ephemeris/__tests__/ephemeris.test.ts (5 tests)
-   ✓ IAU selenographic coordinate system conversions
-   ✓ JPL Horizons ephemeris benchmark agreement (error ≤ 0.35°)
+   ✓ JPL Horizons ephemeris benchmark agreement
+   ✓ Chang'e-4 farside occultation
    ✓ LOLA horizon profile occlusion rays
-   ✓ Multi-day operational window segmentation
+   ✓ Smooth sub-degree horizon interpolation
    ✓ Power viability score algorithm
 ```
 
