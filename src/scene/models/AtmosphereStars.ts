@@ -10,6 +10,7 @@ export class AtmosphereStars {
   public starfield: THREE.Points;
   public directionalSun: THREE.DirectionalLight;
   public ambientLight: THREE.AmbientLight;
+  public rimLight: THREE.DirectionalLight;
 
   // Launch pad interactive elements
   public swingArm: THREE.Group;
@@ -32,9 +33,9 @@ export class AtmosphereStars {
     this.group.add(this.directionalSun);
 
     // Rim light for dramatic aerospace edge highlighting
-    const rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.9);
-    rimLight.position.set(-35, 25, -40);
-    this.group.add(rimLight);
+    this.rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.9);
+    this.rimLight.position.set(-35, 25, -40);
+    this.group.add(this.rimLight);
 
     // 2. Launch Complex 39B Pad, Lattice Gantry Tower & Ground
     this.launchGround = new THREE.Group();

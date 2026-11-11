@@ -206,16 +206,16 @@ export class ThreeConductor {
 
     // Hard vacuum lighting transition (harsh contrast, near-zero ambient, pure solar key)
     if (p < 0.55) {
-      const atmoTrans = seg(0.12, 0.35);
+      const atmoTrans = seg(p, 0.12, 0.35);
       this.atmosphere.ambientLight.color.setHex(0xdde5f5);
       this.atmosphere.ambientLight.intensity = THREE.MathUtils.lerp(0.55, 0.18, atmoTrans);
       this.atmosphere.directionalSun.color.setHex(0xffffff);
       this.atmosphere.directionalSun.intensity = THREE.MathUtils.lerp(2.5, 3.5, atmoTrans);
       this.atmosphere.directionalSun.position.set(35, 45, 25);
-      this.atmosphere.rimLight.intensity = (1 - seg(0.20, 0.45)) * 0.8;
+      this.atmosphere.rimLight.intensity = (1 - seg(p, 0.20, 0.45)) * 0.8;
     } else {
       // Hard vacuum lunar phase: zero atmosphere, cool earthshine tint, intense solar beam
-      const moonTrans = seg(0.55, 0.65);
+      const moonTrans = seg(p, 0.55, 0.65);
       this.atmosphere.ambientLight.color.set(new THREE.Color(0x1a2639));
       this.atmosphere.ambientLight.intensity = THREE.MathUtils.lerp(0.18, 0.04, moonTrans);
       this.atmosphere.directionalSun.color.set(new THREE.Color(0xfffdf8));
