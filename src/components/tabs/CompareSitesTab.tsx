@@ -61,7 +61,7 @@ export const CompareSitesTab: React.FC<CompareSitesTabProps> = ({
           {/* Mode Switcher Pills */}
           <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-700/60 text-xs">
             <button
-              onClick={() => setViewMode('sites')}
+              onClick={() => React.startTransition(() => setViewMode('sites'))}
               className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${
                 viewMode === 'sites'
                   ? 'bg-blue-600 text-white shadow-sm'
@@ -71,7 +71,7 @@ export const CompareSitesTab: React.FC<CompareSitesTabProps> = ({
               Candidate Sites Matrix
             </button>
             <button
-              onClick={() => setViewMode('launch_slip')}
+              onClick={() => React.startTransition(() => setViewMode('launch_slip'))}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
                 viewMode === 'launch_slip'
                   ? 'bg-amber-600 text-white shadow-sm'
@@ -92,7 +92,7 @@ export const CompareSitesTab: React.FC<CompareSitesTabProps> = ({
               return (
                 <button
                   key={site.id}
-                  onClick={() => onToggleSiteSelection(site.id)}
+                  onClick={() => React.startTransition(() => onToggleSiteSelection(site.id))}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
                     isSelected
                       ? 'bg-blue-600/30 text-cyan-300 border-cyan-500/60 shadow-sm'
@@ -113,7 +113,10 @@ export const CompareSitesTab: React.FC<CompareSitesTabProps> = ({
             <span className="text-slate-400 font-bold uppercase">Evaluate Site under Schedule Slips:</span>
             <select
               value={slipSiteId}
-              onChange={(e) => setSlipSiteId(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                React.startTransition(() => setSlipSiteId(val));
+              }}
               className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
             >
               {allSites.map(s => (

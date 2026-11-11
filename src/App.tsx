@@ -6,9 +6,9 @@ import { SkyDomeTab } from './components/tabs/SkyDomeTab';
 import { TimelineTab } from './components/tabs/TimelineTab';
 import { CompareSitesTab } from './components/tabs/CompareSitesTab';
 import { AnalysisTab } from './components/tabs/AnalysisTab';
-import { HeroOverlay } from './components/scroll/HeroOverlay';
-import { ScrollTelemetryHud } from './components/scroll/ScrollTelemetryHud';
-import { MissionCaptionPill } from './components/scroll/MissionCaptionPill';
+import { HeroOverlay, HeroOverlayHandle } from './components/scroll/HeroOverlay';
+import { ScrollTelemetryHud, ScrollTelemetryHudHandle } from './components/scroll/ScrollTelemetryHud';
+import { MissionCaptionPill, MissionCaptionPillHandle } from './components/scroll/MissionCaptionPill';
 import { AboutDataModal } from './components/modals/AboutDataModal';
 import { CustomSiteModal } from './components/modals/CustomSiteModal';
 import { ShareModal } from './components/modals/ShareModal';
@@ -21,12 +21,21 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const conductorRef = useRef<ThreeConductor | null>(null);
 
+  // High-frequency DOM refs to completely decouple scroll from React re-renders
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HeroOverlayHandle>(null);
+  const telemetryHudRef = useRef<ScrollTelemetryHudHandle>(null);
+  const captionPillRef = useRef<MissionCaptionPillHandle>(null);
+  const skipBtnRef = useRef<HTMLButtonElement>(null);
+  const dashboardContainerRef = useRef<HTMLDivElement>(null);
+
   const [scrollProgress, setScrollProgress] = useState<number>(0);
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
   const [isCustomOpen, setIsCustomOpen] = useState<boolean>(false);
   const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
   const [isDebugMode, setIsDebugMode] = useState<boolean>(false);
   const [conductorDebugInfo, setConductorDebugInfo] = useState<any>(null);
+  const lastDebugUpdate = useRef<number>(0);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.search.includes('debug=1')) {
@@ -34,7 +43,7 @@ export function App() {
     }
   }, []);
 
-  // Initialize Three.js Conductor
+  // Initialize Three.js Conductor with decoupled animation listener
   useEffect(() => {
     if (!canvasRef.current) return;
     const conductor = new ThreeConductor(canvasRef.current);
@@ -43,11 +52,51 @@ export function App() {
     conductor.updateHorizonProfile(store.horizonManager);
     conductor.updateSkyDomePaths(store.synodicSamples);
 
+    // Frame-rate decoupled DOM update hook: drives smooth HUD and bar without React reconciliation
+    conductor.onFrameProgress = (currentP: number) => {
+      // 1. Top gradient progress indicator
+      if (progressBarRef.current) {
+        progressBarRef.current.style.width = `${currentP * 100}%`;
+      }
+
+      // 2. Cinematic Hero Overlay
+      heroRef.current?.update(currentP);
+
+      // 3. Scroll Telemetry HUD
+      telemetryHudRef.current?.update(currentP);
+
+      // 4. Mission Narrative Caption Pill
+      captionPillRef.current?.update(currentP);
+
+      // 5. Persistent Skip Button
+      if (skipBtnRef.current) {
+        skipBtnRef.current.style.display = currentP < 0.88 ? 'flex' : 'none';
+      }
+
+      // 6. Interactive Dashboard Container
+      if (dashboardContainerRef.current) {
+        const dashboardOpacity = Math.max(0, Math.min(1, (currentP - 0.88) / 0.10));
+        const isDashboardActive = currentP >= 0.92;
+        dashboardContainerRef.current.style.opacity = String(dashboardOpacity);
+        dashboardContainerRef.current.style.pointerEvents = isDashboardActive ? 'auto' : 'none';
+        dashboardContainerRef.current.style.visibility = dashboardOpacity > 0.01 ? 'visible' : 'hidden';
+      }
+
+      // 7. Throttled debug stats update (only if ?debug=1 active)
+      if (isDebugMode) {
+        const now = performance.now();
+        if (now - lastDebugUpdate.current > 150) {
+          lastDebugUpdate.current = now;
+          setScrollProgress(currentP);
+        }
+      }
+    };
+
     return () => {
       conductor.destroy();
       conductorRef.current = null;
     };
-  }, []);
+  }, [isDebugMode]);
 
   // Update Three.js when site, horizon, or synodic samples change
   useEffect(() => {
@@ -68,13 +117,12 @@ export function App() {
     }
   }, [store.missionDay, store.synodicSamples]);
 
-  // Scroll listener for reversible scrubbing
+  // High-performance scroll listener: does NOT trigger React state updates
   useEffect(() => {
     const handleScroll = () => {
       const scrollHeight = document.body.scrollHeight - window.innerHeight;
       if (scrollHeight <= 0) return;
       const p = Math.max(0, Math.min(1, window.scrollY / scrollHeight));
-      setScrollProgress(p);
       if (conductorRef.current) {
         conductorRef.current.setScrollProgress(p);
       }
@@ -95,9 +143,12 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  // Dashboard opacity & interactive visibility
-  const dashboardOpacity = Math.max(0, Math.min(1, (scrollProgress - 0.88) / 0.10));
-  const isDashboardActive = scrollProgress >= 0.92;
+  // Smooth Tab Switcher using React.startTransition to prevent canvas frame drops
+  const handleTabChange = useCallback((tab: 'skydome' | 'timeline' | 'compare' | 'analysis') => {
+    React.startTransition(() => {
+      store.setActiveTab(tab);
+    });
+  }, [store]);
 
   return (
     <div className="relative min-h-screen bg-space-950 font-sans text-slate-100 antialiased overflow-x-hidden selection:bg-blue-600 selection:text-white">
@@ -113,46 +164,47 @@ export function App() {
 
       {/* 3. Scroll Progress Indicator Bar at Very Top */}
       <div
-        style={{ width: `${scrollProgress * 100}%` }}
+        ref={progressBarRef}
+        style={{ width: '0%' }}
         className="fixed top-0 left-0 h-1 bg-gradient-to-r from-blue-500 via-sky-400 to-amber-400 z-50 pointer-events-none transition-all duration-75"
       />
 
       {/* 4. Cinematic Hero Overlay (Landing Page) */}
-      <HeroOverlay progress={scrollProgress} onSkipToDashboard={skipToDashboard} />
+      <HeroOverlay ref={heroRef} onSkipToDashboard={skipToDashboard} />
 
       {/* 5. Scroll Telemetry HUD (During Flight) */}
-      <ScrollTelemetryHud progress={scrollProgress} />
+      <ScrollTelemetryHud ref={telemetryHudRef} />
 
       {/* 6. Mission Narrative Caption Pill */}
-      <MissionCaptionPill progress={scrollProgress} />
+      <MissionCaptionPill ref={captionPillRef} />
 
       {/* Persistent Skip Launch -> Mission Planner Button */}
-      {scrollProgress < 0.88 && (
-        <button
-          onClick={skipToDashboard}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-950/90 hover:bg-slate-900 text-cyan-300 border border-cyan-500/50 hover:border-cyan-400 font-mono text-xs font-semibold shadow-2xl shadow-cyan-950/50 backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
-        >
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
-          </span>
-          <span>SKIP LAUNCH ➔ MISSION PLANNER</span>
-        </button>
-      )}
+      <button
+        ref={skipBtnRef}
+        onClick={skipToDashboard}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-950/90 hover:bg-slate-900 text-cyan-300 border border-cyan-500/50 hover:border-cyan-400 font-mono text-xs font-semibold shadow-2xl shadow-cyan-950/50 backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+      >
+        <span className="flex h-2 w-2 relative">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+        </span>
+        <span>SKIP LAUNCH ➔ MISSION PLANNER</span>
+      </button>
 
       {/* 7. Interactive Production Dashboard (Fades in around lander at bottom of scroll) */}
       <div
+        ref={dashboardContainerRef}
         style={{
-          opacity: dashboardOpacity,
-          pointerEvents: isDashboardActive ? 'auto' : 'none',
-          visibility: dashboardOpacity > 0.01 ? 'visible' : 'hidden'
+          opacity: 0,
+          pointerEvents: 'none',
+          visibility: 'hidden'
         }}
         className="fixed inset-0 z-30 flex flex-col justify-between transition-opacity duration-300"
       >
         {/* Header */}
         <Header
           activeTab={store.activeTab}
-          setActiveTab={store.setActiveTab}
+          setActiveTab={handleTabChange}
           mode={store.mode}
           setMode={store.setMode}
           theme={store.theme}
@@ -232,14 +284,18 @@ export function App() {
                 allSites={store.allSites}
                 selectedSiteIds={store.compareSiteIds}
                 onToggleSiteSelection={(id) => {
-                  store.setCompareSiteIds(prev =>
-                    prev.includes(id) ? (prev.length > 1 ? prev.filter(x => x !== id) : prev) : [...prev, id]
-                  );
+                  React.startTransition(() => {
+                    store.setCompareSiteIds(prev =>
+                      prev.includes(id) ? (prev.length > 1 ? prev.filter(x => x !== id) : prev) : [...prev, id]
+                    );
+                  });
                 }}
                 targetDate={store.targetDate}
                 onSelectAsPrimary={(site) => {
-                  store.setSite(site);
-                  store.setActiveTab('skydome');
+                  React.startTransition(() => {
+                    store.setSite(site);
+                    store.setActiveTab('skydome');
+                  });
                 }}
               />
             </div>
@@ -255,8 +311,10 @@ export function App() {
                 solarArchitecture={store.solarArchitecture}
                 onToggleSolarArchitecture={store.setSolarArchitecture}
                 onSelectSite={(site) => {
-                  store.setSite(site);
-                  store.setActiveTab('skydome');
+                  React.startTransition(() => {
+                    store.setSite(site);
+                    store.setActiveTab('skydome');
+                  });
                 }}
               />
             </div>
@@ -287,7 +345,7 @@ export function App() {
             const maxScroll = document.body.scrollHeight - window.innerHeight;
             window.scrollTo(0, p * maxScroll);
             setScrollProgress(p);
-            conductorRef.current?.setProgressInstant(p);
+            conductorRef.current?.setProgressImmediate(p);
           }}
           conductorInfo={conductorDebugInfo}
         />

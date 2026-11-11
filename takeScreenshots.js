@@ -10,11 +10,18 @@ if (!fs.existsSync(outDir)) {
 }
 
 async function run() {
-  console.log('Launching Chrome...');
+  console.log('Launching Chrome with WebGL enabled...');
   const browser = await puppeteer.launch({
     executablePath: chromePath,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--enable-webgl',
+      '--ignore-gpu-blocklist',
+      '--use-gl=angle',
+      '--use-angle=default'
+    ]
   });
 
   const page = await browser.newPage();

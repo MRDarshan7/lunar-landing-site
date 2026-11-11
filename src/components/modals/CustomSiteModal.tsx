@@ -30,14 +30,16 @@ export const CustomSiteModal: React.FC<CustomSiteModalProps> = ({
 
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
+      React.startTransition(() => {
+        const parsed = JSON.parse(text);
 
-      if (!Array.isArray(parsed) || parsed.length !== 360 || parsed.some(v => typeof v !== 'number')) {
-        throw new Error('File must be a JSON array containing exactly 360 numbers (azimuth 0° to 359°, elevation in degrees).');
-      }
+        if (!Array.isArray(parsed) || parsed.length !== 360 || parsed.some(v => typeof v !== 'number')) {
+          throw new Error('File must be a JSON array containing exactly 360 numbers (azimuth 0° to 359°, elevation in degrees).');
+        }
 
-      setHorizonProfile(parsed.map(v => Math.max(0, Number(v) || 0)));
-      setFileName(file.name);
+        setHorizonProfile(parsed.map(v => Math.max(0, Number(v) || 0)));
+        setFileName(file.name);
+      });
     } catch (err: any) {
       setError(err.message || 'Invalid JSON horizon format.');
     }
@@ -79,8 +81,10 @@ export const CustomSiteModal: React.FC<CustomSiteModalProps> = ({
       horizonProfile: profile
     };
 
-    onAddCustomSite(newSite);
-    onClose();
+    React.startTransition(() => {
+      onAddCustomSite(newSite);
+      onClose();
+    });
   };
 
   return (

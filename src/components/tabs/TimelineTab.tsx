@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { EphemerisSample, SiteMetrics, LandingSite } from '../../types';
 import { SYNODIC_MONTH_DAYS } from '../../ephemeris/engine';
 import { Sun, Globe, Clock } from 'lucide-react';
@@ -30,8 +30,39 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
   };
 
   const handleClick = () => {
-    if (hoverDay !== null) onSetMissionDay(hoverDay);
+    if (hoverDay !== null) {
+      React.startTransition(() => {
+        onSetMissionDay(hoverDay);
+      });
+    }
   };
+
+  // Memoize heavy track segments so dragging the playhead is zero-jank
+  const solarTrack = useMemo(() => (
+    samples.map((s, idx) => (
+      <div
+        key={idx}
+        style={{ width: `${100 / samples.length}%` }}
+        className={`h-full ${
+          !s.sun.isBlocked ? 'bg-emerald-500' : 'bg-rose-600/80'
+        }`}
+        title={`Day ${s.missionDay}: Sun ${s.sun.el}° (${!s.sun.isBlocked ? 'Sunlit' : 'Shadow'})`}
+      />
+    ))
+  ), [samples]);
+
+  const earthTrack = useMemo(() => (
+    samples.map((s, idx) => (
+      <div
+        key={idx}
+        style={{ width: `${100 / samples.length}%` }}
+        className={`h-full ${
+          !s.earth.isBlocked ? 'bg-cyan-500' : 'bg-rose-900/80'
+        }`}
+        title={`Day ${s.missionDay}: Earth ${s.earth.el}° (${!s.earth.isBlocked ? 'LOS' : 'Blackout'})`}
+      />
+    ))
+  ), [samples]);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 text-slate-100 font-sans">
@@ -89,16 +120,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
         >
           {/* Track 1: Solar Illumination */}
           <div className="absolute top-2 left-0 right-0 h-12 flex">
-            {samples.map((s, idx) => (
-              <div
-                key={idx}
-                style={{ width: `${100 / samples.length}%` }}
-                className={`h-full ${
-                  !s.sun.isBlocked ? 'bg-emerald-500' : 'bg-rose-600/80'
-                }`}
-                title={`Day ${s.missionDay}: Sun ${s.sun.el}° (${!s.sun.isBlocked ? 'Sunlit' : 'Shadow'})`}
-              />
-            ))}
+            {solarTrack}
             <div className="absolute top-1 left-2 px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-black/60 backdrop-blur-sm flex items-center gap-1 border border-slate-700">
               <Sun className="w-3 h-3 text-amber-400" />
               <span>SOLAR POWER TRACK</span>
@@ -107,16 +129,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
 
           {/* Track 2: Direct-to-Earth Comm */}
           <div className="absolute bottom-2 left-0 right-0 h-12 flex">
-            {samples.map((s, idx) => (
-              <div
-                key={idx}
-                style={{ width: `${100 / samples.length}%` }}
-                className={`h-full ${
-                  !s.earth.isBlocked ? 'bg-cyan-500' : 'bg-rose-900/80'
-                }`}
-                title={`Day ${s.missionDay}: Earth ${s.earth.el}° (${!s.earth.isBlocked ? 'LOS' : 'Blackout'})`}
-              />
-            ))}
+            {earthTrack}
             <div className="absolute bottom-1 left-2 px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-black/60 backdrop-blur-sm flex items-center gap-1 border border-slate-700">
               <Globe className="w-3 h-3 text-cyan-400" />
               <span>DIRECT-TO-EARTH LINK TRACK</span>

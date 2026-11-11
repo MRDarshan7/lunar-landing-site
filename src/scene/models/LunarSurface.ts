@@ -16,15 +16,69 @@ export class LunarSurface {
   public group: THREE.Group;
   public landingTerrain: THREE.Mesh;
   public domeBaseDisc: THREE.Mesh;
-  public horizonWallMesh: THREE.Mesh | null = null;
+  public horizonWallMesh: THREE.Mesh;
   public craterGroup: THREE.Group;
   public boulderMesh: THREE.InstancedMesh | null = null;
   private horizonManager: HorizonManager;
+
+  // Pre-allocated fixed buffers for zero-GC horizon wall updates
+  private horizonPositions: Float32Array;
+  private horizonColors: Float32Array;
+  private horizonWallGeo: THREE.BufferGeometry;
+  private static sinTable: Float32Array | null = null;
+  private static cosTable: Float32Array | null = null;
 
   constructor(horizonManager?: HorizonManager) {
     this.group = new THREE.Group();
     this.group.name = 'LunarSurface';
     this.horizonManager = horizonManager || new HorizonManager();
+
+    // Initialize lookup tables once
+    if (!LunarSurface.sinTable) {
+      LunarSurface.sinTable = new Float32Array(360);
+      LunarSurface.cosTable = new Float32Array(360);
+      for (let a = 0; a < 360; a++) {
+        const rad = (a * Math.PI) / 180;
+        LunarSurface.sinTable[a] = Math.sin(rad);
+        LunarSurface.cosTable[a] = Math.cos(rad);
+      }
+    }
+
+    // Fixed-size pre-allocated buffers for 360 segments (6 vertices each)
+    const vertexCount = 360 * 6;
+    this.horizonPositions = new Float32Array(vertexCount * 3);
+    this.horizonColors = new Float32Array(vertexCount * 3);
+
+    // Pre-fill fixed color gradient: base dark slate -> crest amber highlight
+    let cIdx = 0;
+    for (let a = 0; a < 360; a++) {
+      // Triangle 1: base, base, crest
+      this.horizonColors[cIdx++] = 0.08; this.horizonColors[cIdx++] = 0.10; this.horizonColors[cIdx++] = 0.14;
+      this.horizonColors[cIdx++] = 0.08; this.horizonColors[cIdx++] = 0.10; this.horizonColors[cIdx++] = 0.14;
+      this.horizonColors[cIdx++] = 0.95; this.horizonColors[cIdx++] = 0.72; this.horizonColors[cIdx++] = 0.22;
+
+      // Triangle 2: base, crest, crest
+      this.horizonColors[cIdx++] = 0.08; this.horizonColors[cIdx++] = 0.10; this.horizonColors[cIdx++] = 0.14;
+      this.horizonColors[cIdx++] = 0.95; this.horizonColors[cIdx++] = 0.72; this.horizonColors[cIdx++] = 0.22;
+      this.horizonColors[cIdx++] = 0.95; this.horizonColors[cIdx++] = 0.72; this.horizonColors[cIdx++] = 0.22;
+    }
+
+    this.horizonWallGeo = new THREE.BufferGeometry();
+    this.horizonWallGeo.setAttribute('position', new THREE.BufferAttribute(this.horizonPositions, 3));
+    this.horizonWallGeo.setAttribute('color', new THREE.BufferAttribute(this.horizonColors, 3));
+
+    const wallMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.85,
+      metalness: 0.2,
+      side: THREE.DoubleSide
+    });
+
+    this.horizonWallMesh = new THREE.Mesh(this.horizonWallGeo, wallMat);
+    this.horizonWallMesh.castShadow = true;
+    this.horizonWallMesh.receiveShadow = true;
+    this.horizonWallMesh.visible = false;
+    this.group.add(this.horizonWallMesh);
 
     // --- 1. Authentic Hapke / Lommel-Seeliger Regolith Material ---
     const regolithMaterial = createLunarRegolithMaterial();
@@ -195,78 +249,45 @@ export class LunarSurface {
 
   /**
    * Rebuild the 3D extruded terrain horizon wall based on current LOLA data
-   * Creates a vertical topographical silhouette with glowing mountain ridge highlights
+   * Updates pre-allocated buffers in-place with zero GC allocations.
    */
   public updateHorizonWall(hm?: HorizonManager): void {
     if (hm) this.horizonManager = hm;
 
-    if (this.horizonWallMesh) {
-      this.group.remove(this.horizonWallMesh);
-      this.horizonWallMesh.geometry.dispose();
-      this.horizonWallMesh = null;
-    }
-
     const radius = 16.0;
-    const segments = 360;
-    const vertices: number[] = [];
-    const colors: number[] = [];
+    const sinT = LunarSurface.sinTable!;
+    const cosT = LunarSurface.cosTable!;
 
     // Scale elevation degrees to 3D dome height (10° elevation ~ 2.8 units height)
     const elToY = (elDeg: number) => Math.tan((elDeg * Math.PI) / 180) * radius;
 
-    for (let a = 0; a < segments; a++) {
+    let vIdx = 0;
+    for (let a = 0; a < 360; a++) {
       const a0 = a;
       const a1 = (a + 1) % 360;
 
-      const rad0 = (a0 * Math.PI) / 180;
-      const rad1 = (a1 * Math.PI) / 180;
-
       // Azimuth 0 = North (+Z), Azimuth 90 = East (+X)
-      const x0 = radius * Math.sin(rad0);
-      const z0 = radius * Math.cos(rad0);
-      const x1 = radius * Math.sin(rad1);
-      const z1 = radius * Math.cos(rad1);
+      const x0 = radius * sinT[a0];
+      const z0 = radius * cosT[a0];
+      const x1 = radius * sinT[a1];
+      const z1 = radius * cosT[a1];
 
       const yTop0 = Math.max(0.06, elToY(this.horizonManager.getElevationAtAzimuth(a0)));
       const yTop1 = Math.max(0.06, elToY(this.horizonManager.getElevationAtAzimuth(a1)));
 
       // Triangle 1: (x0, 0, z0) -> (x1, 0, z1) -> (x1, yTop1, z1)
-      vertices.push(x0, 0, z0);
-      vertices.push(x1, 0, z1);
-      vertices.push(x1, yTop1, z1);
-
-      // Base: dark slate (0.08, 0.10, 0.14) -> Crest: ridge highlight (0.95, 0.75, 0.25)
-      colors.push(0.08, 0.10, 0.14);
-      colors.push(0.08, 0.10, 0.14);
-      colors.push(0.95, 0.72, 0.22);
+      this.horizonPositions[vIdx++] = x0; this.horizonPositions[vIdx++] = 0; this.horizonPositions[vIdx++] = z0;
+      this.horizonPositions[vIdx++] = x1; this.horizonPositions[vIdx++] = 0; this.horizonPositions[vIdx++] = z1;
+      this.horizonPositions[vIdx++] = x1; this.horizonPositions[vIdx++] = yTop1; this.horizonPositions[vIdx++] = z1;
 
       // Triangle 2: (x0, 0, z0) -> (x1, yTop1, z1) -> (x0, yTop0, z0)
-      vertices.push(x0, 0, z0);
-      vertices.push(x1, yTop1, z1);
-      vertices.push(x0, yTop0, z0);
-
-      colors.push(0.08, 0.10, 0.14);
-      colors.push(0.95, 0.72, 0.22);
-      colors.push(0.95, 0.72, 0.22);
+      this.horizonPositions[vIdx++] = x0; this.horizonPositions[vIdx++] = 0; this.horizonPositions[vIdx++] = z0;
+      this.horizonPositions[vIdx++] = x1; this.horizonPositions[vIdx++] = yTop1; this.horizonPositions[vIdx++] = z1;
+      this.horizonPositions[vIdx++] = x0; this.horizonPositions[vIdx++] = yTop0; this.horizonPositions[vIdx++] = z0;
     }
 
-    const wallGeo = new THREE.BufferGeometry();
-    wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    wallGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    wallGeo.computeVertexNormals();
-
-    const wallMat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.85,
-      metalness: 0.2,
-      side: THREE.DoubleSide
-    });
-
-    this.horizonWallMesh = new THREE.Mesh(wallGeo, wallMat);
-    this.horizonWallMesh.castShadow = true;
-    this.horizonWallMesh.receiveShadow = true;
-    this.horizonWallMesh.visible = false;
-    this.group.add(this.horizonWallMesh);
+    this.horizonWallGeo.attributes.position.needsUpdate = true;
+    this.horizonWallGeo.computeVertexNormals();
   }
 
   /**

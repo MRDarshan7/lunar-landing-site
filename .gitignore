@@ -26,6 +26,7 @@ lerna-debug.log*
 .env.*.local
 
 # Editor & OS files
+.agents/
 .vscode/*
 !.vscode/extensions.json
 .idea/

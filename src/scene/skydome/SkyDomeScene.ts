@@ -24,6 +24,39 @@ export class SkyDomeScene {
 
   private domeRadius: number = 16.0;
 
+  // Pre-allocated fixed-size buffers and geometries for zero-GC updates
+  private static readonly MAX_PATH_SEGMENTS = 512;
+
+  private sunRayPositions: Float32Array;
+  private sunRayGeo: THREE.BufferGeometry;
+  private earthRayPositions: Float32Array;
+  private earthRayGeo: THREE.BufferGeometry;
+
+  private sunLitPositions: Float32Array;
+  private sunLitGeo: THREE.BufferGeometry;
+  private sunLitLine: THREE.LineSegments;
+
+  private sunShadowPositions: Float32Array;
+  private sunShadowGeo: THREE.BufferGeometry;
+  private sunShadowLine: THREE.LineSegments;
+
+  private earthLosPositions: Float32Array;
+  private earthLosGeo: THREE.BufferGeometry;
+  private earthLosLine: THREE.LineSegments;
+
+  private earthBlockedPositions: Float32Array;
+  private earthBlockedGeo: THREE.BufferGeometry;
+  private earthBlockedLine: THREE.LineSegments;
+
+  // Reusable scratch objects
+  private scratchSunPos = new THREE.Vector3();
+  private scratchEarthPos = new THREE.Vector3();
+  private scratchLanderAntenna = new THREE.Vector3(0, 0.85, 0);
+  private scratchP0 = new THREE.Vector3();
+  private scratchP1 = new THREE.Vector3();
+  private scratchDir = new THREE.Vector3();
+  private scratchCrosshair = new THREE.Vector3();
+
   constructor() {
     this.group = new THREE.Group();
     this.group.name = 'SkyDomeElements';
@@ -33,11 +66,62 @@ export class SkyDomeScene {
     this.buildPrecisionGraticule();
     this.group.add(this.domeWireframeGroup);
 
-    // 2. Dual-state celestial trajectory paths
+    // 2. Dual-state celestial trajectory paths with fixed pre-allocated buffers
     this.sunPathGroup = new THREE.Group();
     this.earthPathGroup = new THREE.Group();
     this.group.add(this.sunPathGroup);
     this.group.add(this.earthPathGroup);
+
+    const goldMat = new THREE.LineBasicMaterial({
+      color: 0xf59e0b, // amber-500
+      linewidth: 3.0
+    });
+    const shadowMat = new THREE.LineDashedMaterial({
+      color: 0xef4444, // red-500
+      dashSize: 0.4,
+      gapSize: 0.25,
+      linewidth: 2.5
+    });
+
+    const earthLosMat = new THREE.LineBasicMaterial({
+      color: 0x06b6d4, // cyan-500
+      linewidth: 2.5
+    });
+    const earthBlockedMat = new THREE.LineDashedMaterial({
+      color: 0xf43f5e, // rose-500
+      dashSize: 0.5,
+      gapSize: 0.3,
+      linewidth: 2.5
+    });
+
+    const maxSegs = SkyDomeScene.MAX_PATH_SEGMENTS;
+    this.sunLitPositions = new Float32Array(maxSegs * 6);
+    this.sunLitGeo = new THREE.BufferGeometry();
+    this.sunLitGeo.setAttribute('position', new THREE.BufferAttribute(this.sunLitPositions, 3));
+    this.sunLitGeo.setDrawRange(0, 0);
+    this.sunLitLine = new THREE.LineSegments(this.sunLitGeo, goldMat);
+    this.sunPathGroup.add(this.sunLitLine);
+
+    this.sunShadowPositions = new Float32Array(maxSegs * 6);
+    this.sunShadowGeo = new THREE.BufferGeometry();
+    this.sunShadowGeo.setAttribute('position', new THREE.BufferAttribute(this.sunShadowPositions, 3));
+    this.sunShadowGeo.setDrawRange(0, 0);
+    this.sunShadowLine = new THREE.LineSegments(this.sunShadowGeo, shadowMat);
+    this.sunPathGroup.add(this.sunShadowLine);
+
+    this.earthLosPositions = new Float32Array(maxSegs * 6);
+    this.earthLosGeo = new THREE.BufferGeometry();
+    this.earthLosGeo.setAttribute('position', new THREE.BufferAttribute(this.earthLosPositions, 3));
+    this.earthLosGeo.setDrawRange(0, 0);
+    this.earthLosLine = new THREE.LineSegments(this.earthLosGeo, earthLosMat);
+    this.earthPathGroup.add(this.earthLosLine);
+
+    this.earthBlockedPositions = new Float32Array(maxSegs * 6);
+    this.earthBlockedGeo = new THREE.BufferGeometry();
+    this.earthBlockedGeo.setAttribute('position', new THREE.BufferAttribute(this.earthBlockedPositions, 3));
+    this.earthBlockedGeo.setDrawRange(0, 0);
+    this.earthBlockedLine = new THREE.LineSegments(this.earthBlockedGeo, earthBlockedMat);
+    this.earthPathGroup.add(this.earthBlockedLine);
 
     // 3. Sun Marker (Multi-layer corona halo + point light)
     this.sunMarker = new THREE.Group();
@@ -80,18 +164,17 @@ export class SkyDomeScene {
     this.earthMarker.add(new THREE.Mesh(atmoGeo, atmoMat));
     this.group.add(this.earthMarker);
 
-    // 5. Line-of-sight Telemetry Rays
+    // 5. Line-of-sight Telemetry Rays with fixed pre-allocated buffers
     const rayMatSun = new THREE.LineBasicMaterial({
       color: 0xfbbf24,
       transparent: true,
       opacity: 0.75,
       linewidth: 2.0
     });
-    const sunRayGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0.85, 0),
-      new THREE.Vector3(0, 10, 0)
-    ]);
-    this.sunRay = new THREE.Line(sunRayGeo, rayMatSun);
+    this.sunRayPositions = new Float32Array(6);
+    this.sunRayGeo = new THREE.BufferGeometry();
+    this.sunRayGeo.setAttribute('position', new THREE.BufferAttribute(this.sunRayPositions, 3));
+    this.sunRay = new THREE.Line(this.sunRayGeo, rayMatSun);
     this.group.add(this.sunRay);
 
     const rayMatEarth = new THREE.LineDashedMaterial({
@@ -102,11 +185,10 @@ export class SkyDomeScene {
       opacity: 0.85,
       linewidth: 2.5
     });
-    const earthRayGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0.85, 0),
-      new THREE.Vector3(0, 10, 0)
-    ]);
-    this.earthRay = new THREE.Line(earthRayGeo, rayMatEarth);
+    this.earthRayPositions = new Float32Array(6);
+    this.earthRayGeo = new THREE.BufferGeometry();
+    this.earthRayGeo.setAttribute('position', new THREE.BufferAttribute(this.earthRayPositions, 3));
+    this.earthRay = new THREE.Line(this.earthRayGeo, rayMatEarth);
     this.group.add(this.earthRay);
 
     // 6. Terrain Occlusion Intersection Crosshair
@@ -145,8 +227,9 @@ export class SkyDomeScene {
    * Y = Up (Zenith)
    * Z = North (azimuth 0°)
    * X = East (azimuth 90°)
+   * Optionally accepts a target vector to eliminate GC.
    */
-  public toCartesian(azDeg: number, elDeg: number, r: number = this.domeRadius): THREE.Vector3 {
+  public toCartesian(azDeg: number, elDeg: number, r: number = this.domeRadius, target?: THREE.Vector3): THREE.Vector3 {
     const elRad = (elDeg * Math.PI) / 180;
     const azRad = (azDeg * Math.PI) / 180;
 
@@ -156,6 +239,10 @@ export class SkyDomeScene {
     const x = horizR * Math.sin(azRad);
     const z = horizR * Math.cos(azRad);
 
+    if (target) {
+      target.set(x, y, z);
+      return target;
+    }
     return new THREE.Vector3(x, y, z);
   }
 
@@ -260,115 +347,145 @@ export class SkyDomeScene {
    * Update Sun and Earth trajectory paths based on synodic ephemeris samples
    * Sun: Dual-state solid glowing gold (illuminated) vs dashed crimson (shadow)
    * Earth: Continuous libration loop ribbon
+   * Updates pre-allocated Float32Array buffers in-place with zero GC allocations.
    */
   public updatePaths(samples: EphemerisSample[]): void {
-    while (this.sunPathGroup.children.length > 0) {
-      const obj = this.sunPathGroup.children[0] as THREE.Line;
-      this.sunPathGroup.remove(obj);
-      obj.geometry.dispose();
-    }
-    while (this.earthPathGroup.children.length > 0) {
-      const obj = this.earthPathGroup.children[0] as THREE.Line;
-      this.earthPathGroup.remove(obj);
-      obj.geometry.dispose();
-    }
+    let sunLitCount = 0;
+    let sunShadowCount = 0;
+    let earthLosCount = 0;
+    let earthBlockedCount = 0;
 
-    const goldMat = new THREE.LineBasicMaterial({
-      color: 0xf59e0b, // amber-500
-      linewidth: 3.0
-    });
-    const shadowMat = new THREE.LineDashedMaterial({
-      color: 0xef4444, // red-500
-      dashSize: 0.4,
-      gapSize: 0.25,
-      linewidth: 2.5
-    });
-
-    const earthLosMat = new THREE.LineBasicMaterial({
-      color: 0x06b6d4, // cyan-500
-      linewidth: 2.5
-    });
-    const earthBlockedMat = new THREE.LineDashedMaterial({
-      color: 0xf43f5e, // rose-500
-      dashSize: 0.5,
-      gapSize: 0.3,
-      linewidth: 2.5
-    });
+    const maxSegs = SkyDomeScene.MAX_PATH_SEGMENTS;
+    const len = Math.min(samples.length - 1, maxSegs);
 
     // Sun trajectory ribbons
-    for (let i = 0; i < samples.length - 1; i++) {
+    for (let i = 0; i < len; i++) {
       const s0 = samples[i];
       const s1 = samples[i + 1];
       if (s0.sun.el < -4 && s1.sun.el < -4) continue;
 
-      const p0 = this.toCartesian(s0.sun.az, s0.sun.el);
-      const p1 = this.toCartesian(s1.sun.az, s1.sun.el);
+      this.toCartesian(s0.sun.az, s0.sun.el, this.domeRadius, this.scratchP0);
+      this.toCartesian(s1.sun.az, s1.sun.el, this.domeRadius, this.scratchP1);
 
       const isBlocked = s0.sun.isBlocked || s1.sun.isBlocked;
-      const geo = new THREE.BufferGeometry().setFromPoints([p0, p1]);
-      const seg = new THREE.Line(geo, isBlocked ? shadowMat : goldMat);
-      if (isBlocked) seg.computeLineDistances();
-      this.sunPathGroup.add(seg);
+      if (isBlocked) {
+        if (sunShadowCount < maxSegs) {
+          const idx = sunShadowCount * 6;
+          this.sunShadowPositions[idx] = this.scratchP0.x;
+          this.sunShadowPositions[idx + 1] = this.scratchP0.y;
+          this.sunShadowPositions[idx + 2] = this.scratchP0.z;
+          this.sunShadowPositions[idx + 3] = this.scratchP1.x;
+          this.sunShadowPositions[idx + 4] = this.scratchP1.y;
+          this.sunShadowPositions[idx + 5] = this.scratchP1.z;
+          sunShadowCount++;
+        }
+      } else {
+        if (sunLitCount < maxSegs) {
+          const idx = sunLitCount * 6;
+          this.sunLitPositions[idx] = this.scratchP0.x;
+          this.sunLitPositions[idx + 1] = this.scratchP0.y;
+          this.sunLitPositions[idx + 2] = this.scratchP0.z;
+          this.sunLitPositions[idx + 3] = this.scratchP1.x;
+          this.sunLitPositions[idx + 4] = this.scratchP1.y;
+          this.sunLitPositions[idx + 5] = this.scratchP1.z;
+          sunLitCount++;
+        }
+      }
     }
 
     // Earth libration ribbons
-    for (let i = 0; i < samples.length - 1; i++) {
+    for (let i = 0; i < len; i++) {
       const s0 = samples[i];
       const s1 = samples[i + 1];
       if (s0.earth.el < -4 && s1.earth.el < -4) continue;
 
-      const p0 = this.toCartesian(s0.earth.az, s0.earth.el);
-      const p1 = this.toCartesian(s1.earth.az, s1.earth.el);
+      this.toCartesian(s0.earth.az, s0.earth.el, this.domeRadius, this.scratchP0);
+      this.toCartesian(s1.earth.az, s1.earth.el, this.domeRadius, this.scratchP1);
 
       const isBlocked = s0.earth.isBlocked || s1.earth.isBlocked;
-      const geo = new THREE.BufferGeometry().setFromPoints([p0, p1]);
-      const seg = new THREE.Line(geo, isBlocked ? earthBlockedMat : earthLosMat);
-      if (isBlocked) seg.computeLineDistances();
-      this.earthPathGroup.add(seg);
+      if (isBlocked) {
+        if (earthBlockedCount < maxSegs) {
+          const idx = earthBlockedCount * 6;
+          this.earthBlockedPositions[idx] = this.scratchP0.x;
+          this.earthBlockedPositions[idx + 1] = this.scratchP0.y;
+          this.earthBlockedPositions[idx + 2] = this.scratchP0.z;
+          this.earthBlockedPositions[idx + 3] = this.scratchP1.x;
+          this.earthBlockedPositions[idx + 4] = this.scratchP1.y;
+          this.earthBlockedPositions[idx + 5] = this.scratchP1.z;
+          earthBlockedCount++;
+        }
+      } else {
+        if (earthLosCount < maxSegs) {
+          const idx = earthLosCount * 6;
+          this.earthLosPositions[idx] = this.scratchP0.x;
+          this.earthLosPositions[idx + 1] = this.scratchP0.y;
+          this.earthLosPositions[idx + 2] = this.scratchP0.z;
+          this.earthLosPositions[idx + 3] = this.scratchP1.x;
+          this.earthLosPositions[idx + 4] = this.scratchP1.y;
+          this.earthLosPositions[idx + 5] = this.scratchP1.z;
+          earthLosCount++;
+        }
+      }
     }
+
+    this.sunLitGeo.setDrawRange(0, sunLitCount * 2);
+    this.sunLitGeo.attributes.position.needsUpdate = true;
+
+    this.sunShadowGeo.setDrawRange(0, sunShadowCount * 2);
+    this.sunShadowGeo.attributes.position.needsUpdate = true;
+    if (sunShadowCount > 0) this.sunShadowLine.computeLineDistances();
+
+    this.earthLosGeo.setDrawRange(0, earthLosCount * 2);
+    this.earthLosGeo.attributes.position.needsUpdate = true;
+
+    this.earthBlockedGeo.setDrawRange(0, earthBlockedCount * 2);
+    this.earthBlockedGeo.attributes.position.needsUpdate = true;
+    if (earthBlockedCount > 0) this.earthBlockedLine.computeLineDistances();
   }
 
   /**
-   * Update active celestial positions and telemetry line-of-sight rays
+   * Update active celestial positions and telemetry line-of-sight rays.
+   * Updates pre-allocated Float32Array buffers in-place with zero GC allocations.
    */
   public updatePositions(sun: CelestialBodyPos, earth: CelestialBodyPos): void {
-    const sunPos = this.toCartesian(sun.az, Math.max(-2, sun.el));
-    const earthPos = this.toCartesian(earth.az, Math.max(-2, earth.el));
+    this.toCartesian(sun.az, Math.max(-2, sun.el), this.domeRadius, this.scratchSunPos);
+    this.toCartesian(earth.az, Math.max(-2, earth.el), this.domeRadius, this.scratchEarthPos);
 
-    this.sunMarker.position.copy(sunPos);
-    this.earthMarker.position.copy(earthPos);
+    this.sunMarker.position.copy(this.scratchSunPos);
+    this.earthMarker.position.copy(this.scratchEarthPos);
 
     this.sunMarker.visible = sun.el > -4;
     this.earthMarker.visible = earth.el > -4;
 
-    // Lander high-gain antenna origin
-    const landerAntennaPos = new THREE.Vector3(0, 0.85, 0);
-
-    // Update Sun Ray
-    const sunPositions = new Float32Array([
-      landerAntennaPos.x, landerAntennaPos.y, landerAntennaPos.z,
-      sunPos.x, sunPos.y, sunPos.z
-    ]);
-    this.sunRay.geometry.setAttribute('position', new THREE.BufferAttribute(sunPositions, 3));
+    // Update Sun Ray buffer in-place
+    this.sunRayPositions[0] = this.scratchLanderAntenna.x;
+    this.sunRayPositions[1] = this.scratchLanderAntenna.y;
+    this.sunRayPositions[2] = this.scratchLanderAntenna.z;
+    this.sunRayPositions[3] = this.scratchSunPos.x;
+    this.sunRayPositions[4] = this.scratchSunPos.y;
+    this.sunRayPositions[5] = this.scratchSunPos.z;
+    this.sunRayGeo.attributes.position.needsUpdate = true;
     this.sunRay.visible = !sun.isBlocked && sun.el > 0;
 
-    // Update Earth LOS Ray
-    const earthPositions = new Float32Array([
-      landerAntennaPos.x, landerAntennaPos.y, landerAntennaPos.z,
-      earthPos.x, earthPos.y, earthPos.z
-    ]);
-    this.earthRay.geometry.setAttribute('position', new THREE.BufferAttribute(earthPositions, 3));
+    // Update Earth LOS Ray buffer in-place
+    this.earthRayPositions[0] = this.scratchLanderAntenna.x;
+    this.earthRayPositions[1] = this.scratchLanderAntenna.y;
+    this.earthRayPositions[2] = this.scratchLanderAntenna.z;
+    this.earthRayPositions[3] = this.scratchEarthPos.x;
+    this.earthRayPositions[4] = this.scratchEarthPos.y;
+    this.earthRayPositions[5] = this.scratchEarthPos.z;
+    this.earthRayGeo.attributes.position.needsUpdate = true;
     this.earthRay.computeLineDistances();
     this.earthRay.visible = earth.el > -2;
 
-    // Change Earth ray color based on occlusion status
+    // Update occlusion status
     if (earth.isBlocked) {
       (this.earthRay.material as THREE.LineDashedMaterial).color.setHex(0xef4444); // Crimson when occluded
-      // Position occlusion crosshair marker along the line towards terrain
-      const dir = earthPos.clone().sub(landerAntennaPos).normalize();
-      const crosshairDist = Math.min(14.0, earthPos.length() * 0.75);
-      this.occlusionCrosshair.position.copy(landerAntennaPos.clone().add(dir.multiplyScalar(crosshairDist)));
-      this.occlusionCrosshair.lookAt(landerAntennaPos);
+      this.scratchDir.copy(this.scratchEarthPos).sub(this.scratchLanderAntenna).normalize();
+      const crosshairDist = Math.min(14.0, this.scratchEarthPos.length() * 0.75);
+      this.scratchCrosshair.copy(this.scratchLanderAntenna).addScaledVector(this.scratchDir, crosshairDist);
+      this.occlusionCrosshair.position.copy(this.scratchCrosshair);
+      this.occlusionCrosshair.lookAt(this.scratchLanderAntenna);
       this.occlusionCrosshair.visible = true;
     } else {
       (this.earthRay.material as THREE.LineDashedMaterial).color.setHex(0x06b6d4); // Cyan when clear

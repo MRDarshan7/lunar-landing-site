@@ -76,20 +76,24 @@ export function useNavigatorStore() {
     return new Date(epochMs);
   }, [targetDate, missionDay]);
 
-  // Full Synodic Samples for 3D paths and Gantt chart
+  // Full Synodic Samples for 3D paths and Gantt chart (memoized per site & targetDate)
   const synodicSamples = useMemo(() => {
     return EphemerisEngine.sampleSynodicCycle(currentSite, targetDate, 180, horizonManager);
   }, [currentSite, targetDate, horizonManager]);
 
-  // Site Metrics & Operational Windows
+  // Quantize epoch hour to prevent re-running heavy calculations on sub-minute scrubs
+  const epochHour = Math.floor(currentEpochDate.getTime() / (3600 * 1000));
+
+  // Site Metrics & Operational Windows (memoized per site & epoch hour)
   const siteMetrics = useMemo(() => {
     return EphemerisEngine.computeSiteMetrics(currentSite, currentEpochDate, horizonManager);
-  }, [currentSite, currentEpochDate, horizonManager]);
+  }, [currentSite, epochHour, horizonManager]);
 
-  // Live countdown to next terrain sunset/sunrise & earthset/earthrise
+  // Live countdown to next terrain sunset/sunrise & earthset/earthrise (memoized per half-hour)
+  const epochHalfHour = Math.floor(currentEpochDate.getTime() / (1800 * 1000));
   const countdownEvents = useMemo(() => {
     return EphemerisEngine.computeCountdownEvents(currentSite, currentEpochDate, horizonManager);
-  }, [currentSite, currentEpochDate, horizonManager]);
+  }, [currentSite, epochHalfHour, horizonManager]);
 
   // Switching sites with "What changed" delta calculation
   const setSite = useCallback((site: LandingSite) => {
@@ -117,22 +121,26 @@ export function useNavigatorStore() {
     setSite(site);
   }, [setSite]);
 
-  // Playback timer loop
+  // High-performance RAF playback loop synchronized with screen refresh rate
   useEffect(() => {
     if (!isPlaying) return;
 
+    let animId: number;
     let lastTime = performance.now();
-    const interval = setInterval(() => {
-      const now = performance.now();
-      const dtSec = (now - lastTime) / 1000;
+
+    const loop = (now: number) => {
+      const dtSec = Math.min((now - lastTime) / 1000, 0.1);
       lastTime = now;
 
       // 1 real second = playbackSpeed hours
       const deltaDays = (dtSec * playbackSpeed) / 24;
       setMissionDay(prev => (prev + deltaDays) % SYNODIC_MONTH_DAYS);
-    }, 40);
 
-    return () => clearInterval(interval);
+      animId = requestAnimationFrame(loop);
+    };
+
+    animId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animId);
   }, [isPlaying, playbackSpeed]);
 
   // Toggle theme class on body

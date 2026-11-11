@@ -6,6 +6,7 @@
 
 export class HorizonManager {
   private profile: number[]; // 360 values, degrees
+  private rayCache = new Map<string, boolean>();
 
   constructor(profile?: number[]) {
     if (profile && profile.length === 360) {
@@ -24,6 +25,7 @@ export class HorizonManager {
       throw new Error(`Profile must contain exactly 360 elevation values (received ${profile.length})`);
     }
     this.profile = profile.map(v => Math.max(0, Number(v) || 0));
+    this.rayCache.clear();
   }
 
   /**
@@ -51,10 +53,19 @@ export class HorizonManager {
   /**
    * Check whether a body with given azimuth and elevation is blocked by terrain
    * Returns true if blocked (or below horizon), false if in clear line-of-sight.
+   * Memoized with integer-quantized fast cache.
    */
   public isBlocked(azimuthDeg: number, elevationDeg: number): boolean {
+    const key = `${Math.round(azimuthDeg * 10)}_${Math.round(elevationDeg * 10)}`;
+    const cached = this.rayCache.get(key);
+    if (cached !== undefined) return cached;
+
     const horizonElev = this.getElevationAtAzimuth(azimuthDeg);
-    return elevationDeg <= horizonElev;
+    const blocked = elevationDeg <= horizonElev;
+    if (this.rayCache.size < 4096) {
+      this.rayCache.set(key, blocked);
+    }
+    return blocked;
   }
 
   /**

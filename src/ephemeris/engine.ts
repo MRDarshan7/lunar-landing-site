@@ -17,6 +17,50 @@ const MOON_MEAN_RADIUS_KM = 1737.4;
 export const SYNODIC_MONTH_DAYS = 29.530588853;
 export const SYNODIC_MONTH_HOURS = SYNODIC_MONTH_DAYS * 24;
 
+/**
+ * High-performance LRU Cache for ephemeris simulation memoization.
+ */
+class EphemerisLRU<K, V> {
+  private capacity: number;
+  private cache: Map<K, V>;
+
+  constructor(capacity: number = 256) {
+    this.capacity = capacity;
+    this.cache = new Map<K, V>();
+  }
+
+  public get(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined;
+    const value = this.cache.get(key)!;
+    // Refresh MRU position in map insertion order
+    this.cache.delete(key);
+    this.cache.set(key, value);
+    return value;
+  }
+
+  public set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.capacity) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
+    }
+    this.cache.set(key, value);
+  }
+
+  public clear(): void {
+    this.cache.clear();
+  }
+}
+
+// Global memoization stores keyed by `${siteId}_${epochDayRounded}`
+const synodicCycleCache = new EphemerisLRU<string, EphemerisSample[]>(128);
+const siteMetricsCache = new EphemerisLRU<string, SiteMetrics>(128);
+const countdownEventsCache = new EphemerisLRU<string, CountdownEvents>(128);
+const rayCastCache = new EphemerisLRU<string, boolean>(2048);
+
 export interface TopocentricResult {
   sun: CelestialBodyPos;
   earth: CelestialBodyPos;
@@ -141,6 +185,7 @@ export class EphemerisEngine {
   /**
    * Sample positions across an entire synodic cycle (29.53 days)
    * used for 3D path trails, Gantt timeline, and aggregate metrics.
+   * Memoized with LRU cache keyed by `${siteId}_${epochDayRounded}`.
    */
   public static sampleSynodicCycle(
     site: LandingSite,
@@ -148,6 +193,13 @@ export class EphemerisEngine {
     numSamples: number = 180,
     horizonManager?: HorizonManager
   ): EphemerisSample[] {
+    const epochDayRounded = Math.round(baseDate.getTime() / (24 * 3600 * 1000));
+    const cacheKey = `${site.id}_${epochDayRounded}_${numSamples}`;
+    const cached = synodicCycleCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const hm = horizonManager || new HorizonManager(site.horizonProfile);
     const samples: EphemerisSample[] = [];
     const baseTimeMs = baseDate.getTime();
@@ -172,17 +224,38 @@ export class EphemerisEngine {
       });
     }
 
+    synodicCycleCache.set(cacheKey, samples);
     return samples;
   }
 
   /**
-   * Compute aggregate metrics and operational windows across the cycle
+   * Alias for sampleSynodicCycle to support deterministic mission planning.
+   */
+  public static computeSynodicCycle(
+    site: LandingSite,
+    baseDate: Date,
+    numSamples: number = 180,
+    horizonManager?: HorizonManager
+  ): EphemerisSample[] {
+    return this.sampleSynodicCycle(site, baseDate, numSamples, horizonManager);
+  }
+
+  /**
+   * Compute aggregate metrics and operational windows across the cycle.
+   * Power Viability score and cycle-wide metrics are memoized via LRU cache.
    */
   public static computeSiteMetrics(
     site: LandingSite,
     currentDate: Date,
     horizonManager?: HorizonManager
   ): SiteMetrics {
+    const epochDayRounded = Math.round(currentDate.getTime() / (24 * 3600 * 1000));
+    const cacheKey = `${site.id}_${epochDayRounded}_${Math.floor(currentDate.getTime() / (3600 * 1000))}`;
+    const cached = siteMetricsCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const hm = horizonManager || new HorizonManager(site.horizonProfile);
     const current = this.calculatePosition(site, currentDate, hm);
 
@@ -333,7 +406,7 @@ export class EphemerisEngine {
 
     const powerExplanation = `Score ${powerScore}/100: Calculated from ${(illuminationFraction * 100).toFixed(1)}% total illumination (weight 60%), longest shadow endurance penalty of ${longestShadowHours}h against a 120h battery survival threshold (weight 25%), and direct Earth telemetry coverage of ${(earthVisibilityFraction * 100).toFixed(1)}% (weight 15%).`;
 
-    return {
+    const result: SiteMetrics = {
       currentSunElevation: current.sun.el,
       currentSunAzimuth: current.sun.az,
       currentEarthElevation: current.earth.el,
@@ -356,6 +429,9 @@ export class EphemerisEngine {
       commRating,
       windows
     };
+
+    siteMetricsCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -367,6 +443,10 @@ export class EphemerisEngine {
     currentDate: Date,
     horizonManager?: HorizonManager
   ): CountdownEvents {
+    const cacheKey = `${site.id}_${Math.floor(currentDate.getTime() / (1800 * 1000))}`;
+    const cached = countdownEventsCache.get(cacheKey);
+    if (cached) return cached;
+
     const hm = horizonManager || new HorizonManager(site.horizonProfile);
     const initialPos = this.calculatePosition(site, currentDate, hm);
     const initialSunBlocked = initialPos.sun.isBlocked;
@@ -415,7 +495,7 @@ export class EphemerisEngine {
     const nextEarthType = initialEarthBlocked ? 'earthrise' : 'earthset';
     const nextEarthDate = new Date(baseMs + eHrs * 3600 * 1000);
 
-    return {
+    const result: CountdownEvents = {
       nextSolarEvent: {
         type: nextSolarType,
         hoursRemaining: sHrs,
@@ -431,6 +511,9 @@ export class EphemerisEngine {
         isPermanentlyOcculted
       }
     };
+
+    countdownEventsCache.set(cacheKey, result);
+    return result;
   }
 
   /**

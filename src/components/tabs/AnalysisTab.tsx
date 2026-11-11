@@ -85,7 +85,7 @@ export const AnalysisTab: React.FC<AnalysisTabProps> = ({
           {/* Architecture Selector Buttons */}
           <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-700/60 text-xs">
             <button
-              onClick={() => setArch('vertical')}
+              onClick={() => React.startTransition(() => setArch('vertical'))}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
                 activeArch === 'vertical'
                   ? 'bg-amber-600 text-white shadow-sm'
@@ -96,7 +96,7 @@ export const AnalysisTab: React.FC<AnalysisTabProps> = ({
               <span>Vertical Deployed Array [cos θ]</span>
             </button>
             <button
-              onClick={() => setArch('horizontal')}
+              onClick={() => React.startTransition(() => setArch('horizontal'))}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
                 activeArch === 'horizontal'
                   ? 'bg-blue-600 text-white shadow-sm'
@@ -240,7 +240,7 @@ export const AnalysisTab: React.FC<AnalysisTabProps> = ({
           {rankedSites.map(({ site, metrics }, idx) => (
             <div
               key={site.id}
-              onClick={() => onSelectSite(site)}
+              onClick={() => React.startTransition(() => onSelectSite(site))}
               className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-wrap items-center justify-between gap-3 ${
                 site.id === currentSite.id
                   ? 'bg-blue-950/40 border-cyan-500/60 shadow-sm'

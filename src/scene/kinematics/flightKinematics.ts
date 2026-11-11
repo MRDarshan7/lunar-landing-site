@@ -63,11 +63,57 @@ export interface CameraState {
   pitch: number;
 }
 
+// Module-level reusable scratch objects for zero-allocation animation loops
+const _kBoosterPos = new THREE.Vector3();
+const _kBoosterRot = new THREE.Euler();
+const _kFairingLeftPos = new THREE.Vector3();
+const _kFairingLeftRot = new THREE.Euler();
+const _kFairingRightPos = new THREE.Vector3();
+const _kFairingRightRot = new THREE.Euler();
+const _kUpperStagePos = new THREE.Vector3();
+const _kUpperStageRot = new THREE.Euler();
+
+const _kHeroCamPos = new THREE.Vector3();
+const _kHeroLookAt = new THREE.Vector3();
+const _kAscentCamPos = new THREE.Vector3();
+const _kAscentLookAt = new THREE.Vector3();
+const _kCamPos = new THREE.Vector3();
+const _kLookTarget = new THREE.Vector3();
+const _kForward = new THREE.Vector3();
+
+const _kInternalCraftState: CraftState = {
+  craftRigPos: new THREE.Vector3(),
+  craftRigRot: new THREE.Euler(),
+  landerWorldPos: new THREE.Vector3(),
+  landerWorldRot: new THREE.Euler(),
+  landerScale: 1,
+  boosterAttached: true,
+  boosterWorldPos: new THREE.Vector3(),
+  boosterWorldRot: new THREE.Euler(),
+  fairingsAttached: true,
+  fairingLeftPos: new THREE.Vector3(),
+  fairingLeftRot: new THREE.Euler(),
+  fairingRightPos: new THREE.Vector3(),
+  fairingRightRot: new THREE.Euler(),
+  upperStageAttached: true,
+  upperStageWorldPos: new THREE.Vector3(),
+  upperStageWorldRot: new THREE.Euler(),
+  deployProgress: 0,
+  engineFacing: 0,
+  throttle: 0,
+  legCompression: 0
+};
+
 /**
  * Computes exact vehicle kinematics across scroll progress p in [0, 1].
  * Guarantees C1 continuity across every stage transition (no teleportation).
+ * Optionally writes into a pre-allocated target to eliminate GC during rendering.
  */
-export function computeCraftState(p: number, dims: RocketDimensions = ROCKET_DIMS): CraftState {
+export function computeCraftState(
+  p: number,
+  dims: RocketDimensions = ROCKET_DIMS,
+  target?: CraftState
+): CraftState {
   const padOffsetX = 3.5 * (1 - ease(seg(p, 0.08, 0.22)));
 
   // Ascent climb (0.08 to 0.52)
@@ -160,8 +206,8 @@ export function computeCraftState(p: number, dims: RocketDimensions = ROCKET_DIM
   // 3. Stage 1 Booster Separation (p >= 0.35)
   // -------------------------------------------------------------------------
   const boosterAttached = p < 0.35;
-  const boosterWorldPos = new THREE.Vector3();
-  const boosterWorldRot = new THREE.Euler();
+  const boosterWorldPos = target ? _kBoosterPos : new THREE.Vector3();
+  const boosterWorldRot = target ? _kBoosterRot : new THREE.Euler();
 
   if (boosterAttached) {
     boosterWorldPos.set(craftRigX, craftRigY, craftRigZ);
@@ -184,10 +230,10 @@ export function computeCraftState(p: number, dims: RocketDimensions = ROCKET_DIM
   // 4. Fairing Jettison (p >= 0.45)
   // -------------------------------------------------------------------------
   const fairingsAttached = p < 0.45;
-  const fairingLeftPos = new THREE.Vector3();
-  const fairingLeftRot = new THREE.Euler();
-  const fairingRightPos = new THREE.Vector3();
-  const fairingRightRot = new THREE.Euler();
+  const fairingLeftPos = target ? _kFairingLeftPos : new THREE.Vector3();
+  const fairingLeftRot = target ? _kFairingLeftRot : new THREE.Euler();
+  const fairingRightPos = target ? _kFairingRightPos : new THREE.Vector3();
+  const fairingRightRot = target ? _kFairingRightRot : new THREE.Euler();
 
   const fairingMountY = craftRigY + dims.boosterHeight + dims.interstageHeight + dims.upperStageHeight + dims.adapterHeight;
 
@@ -221,8 +267,8 @@ export function computeCraftState(p: number, dims: RocketDimensions = ROCKET_DIM
   // 5. Stage 2 Upper Stage Separation (p >= 0.55)
   // -------------------------------------------------------------------------
   const upperStageAttached = p < 0.55;
-  const upperStageWorldPos = new THREE.Vector3();
-  const upperStageWorldRot = new THREE.Euler();
+  const upperStageWorldPos = target ? _kUpperStagePos : new THREE.Vector3();
+  const upperStageWorldRot = target ? _kUpperStageRot : new THREE.Euler();
 
   const upperStageBaseY = craftRigY + dims.boosterHeight + dims.interstageHeight;
 
@@ -239,6 +285,30 @@ export function computeCraftState(p: number, dims: RocketDimensions = ROCKET_DIM
       craftRigZ - upperDrop * 0.4
     );
     upperStageWorldRot.set(tUpper * 0.65, 0, tUpper * 0.35);
+  }
+
+  if (target) {
+    target.craftRigPos.set(craftRigX, craftRigY, craftRigZ);
+    target.craftRigRot.set(0, 0, 0);
+    target.landerWorldPos.set(landerWorldX, landerWorldY, landerWorldZ);
+    target.landerWorldRot.set(0, 0, 0);
+    target.landerScale = landerScale;
+    target.boosterAttached = boosterAttached;
+    target.boosterWorldPos.copy(boosterWorldPos);
+    target.boosterWorldRot.copy(boosterWorldRot);
+    target.fairingsAttached = fairingsAttached;
+    target.fairingLeftPos.copy(fairingLeftPos);
+    target.fairingLeftRot.copy(fairingLeftRot);
+    target.fairingRightPos.copy(fairingRightPos);
+    target.fairingRightRot.copy(fairingRightRot);
+    target.upperStageAttached = upperStageAttached;
+    target.upperStageWorldPos.copy(upperStageWorldPos);
+    target.upperStageWorldRot.copy(upperStageWorldRot);
+    target.deployProgress = deployProgress;
+    target.engineFacing = engineFacing;
+    target.throttle = throttle;
+    target.legCompression = legCompression;
+    return target;
   }
 
   return {
@@ -269,6 +339,7 @@ export function computeCraftState(p: number, dims: RocketDimensions = ROCKET_DIM
  * Computes exact Camera choreography across scroll progress p.
  * Handles wide hero framing handover, staging dolly pullback,
  * and pitch-constrained lunar descent.
+ * Optionally writes into a pre-allocated target for zero allocations.
  */
 export function computeCameraState(
   p: number,
@@ -276,9 +347,10 @@ export function computeCameraState(
   fovDeg = 46,
   aspect = 16 / 9,
   isPortrait = false,
-  domeOpts?: { yaw?: number; pitch?: number; zoom?: number }
+  domeOpts?: { yaw?: number; pitch?: number; zoom?: number },
+  target?: CameraState
 ): CameraState {
-  const craft = computeCraftState(p, dims);
+  const craft = target ? computeCraftState(p, dims, _kInternalCraftState) : computeCraftState(p, dims);
   const fovRad = (fovDeg * Math.PI) / 180;
 
   // -------------------------------------------------------------------------
@@ -290,24 +362,26 @@ export function computeCameraState(
   const heroLookY = isPortrait ? dims.totalHeight * 0.80 : dims.totalHeight * 0.46; // In portrait, look higher so rocket is framed in lower half below title text
   const heroShiftX = isPortrait ? 0.0 : -9.5; // Offset camera to place rocket in right third on desktop
 
-  const heroCamPos = new THREE.Vector3(
-    craft.craftRigPos.x + heroShiftX,
-    heroLookY,
-    heroFitDist
-  );
-  const heroLookAt = new THREE.Vector3(
-    craft.craftRigPos.x + (isPortrait ? 0 : 3.5),
-    heroLookY,
-    0
-  );
+  const heroCamPos = target
+    ? _kHeroCamPos.set(craft.craftRigPos.x + heroShiftX, heroLookY, heroFitDist)
+    : new THREE.Vector3(craft.craftRigPos.x + heroShiftX, heroLookY, heroFitDist);
+
+  const heroLookAt = target
+    ? _kHeroLookAt.set(craft.craftRigPos.x + (isPortrait ? 0 : 3.5), heroLookY, 0)
+    : new THREE.Vector3(craft.craftRigPos.x + (isPortrait ? 0 : 3.5), heroLookY, 0);
 
   // -------------------------------------------------------------------------
   // Ascent Tracking Camera (p = 0.08 -> 0.35)
   // -------------------------------------------------------------------------
   const ascentCamY = craft.craftRigPos.y * 0.85 + 4.5;
   const ascentCamZ = 24.0 - (p / 0.35) * 8.0; // 24 -> 16
-  const ascentCamPos = new THREE.Vector3(craft.craftRigPos.x * 0.5, ascentCamY, ascentCamZ);
-  const ascentLookAt = new THREE.Vector3(craft.craftRigPos.x * 0.5, craft.craftRigPos.y + 3.0, 0);
+  const ascentCamPos = target
+    ? _kAscentCamPos.set(craft.craftRigPos.x * 0.5, ascentCamY, ascentCamZ)
+    : new THREE.Vector3(craft.craftRigPos.x * 0.5, ascentCamY, ascentCamZ);
+
+  const ascentLookAt = target
+    ? _kAscentLookAt.set(craft.craftRigPos.x * 0.5, craft.craftRigPos.y + 3.0, 0)
+    : new THREE.Vector3(craft.craftRigPos.x * 0.5, craft.craftRigPos.y + 3.0, 0);
 
   // Deterministic liftoff camera shake (function of p, 100% reversible)
   const boosterThrust = seg(p, 0.08, 0.14) * (1 - seg(p, 0.33, 0.35));
@@ -321,8 +395,8 @@ export function computeCameraState(
   // Blend hero framing to ascent tracking: 0.05 -> 0.16
   const heroBlend = 1 - ease(seg(p, 0.05, 0.16));
 
-  let camPos = new THREE.Vector3();
-  let lookTarget = new THREE.Vector3();
+  const camPos = target ? _kCamPos : new THREE.Vector3();
+  const lookTarget = target ? _kLookTarget : new THREE.Vector3();
 
   if (p < 0.35) {
     camPos.lerpVectors(ascentCamPos, heroCamPos, heroBlend);
@@ -372,8 +446,17 @@ export function computeCameraState(
   }
 
   // Compute camera pitch (angle relative to horizontal plane)
-  const forward = new THREE.Vector3().subVectors(lookTarget, camPos).normalize();
+  const forward = target
+    ? _kForward.subVectors(lookTarget, camPos).normalize()
+    : new THREE.Vector3().subVectors(lookTarget, camPos).normalize();
   const pitch = Math.asin(forward.y);
+
+  if (target) {
+    target.position.copy(camPos);
+    target.lookAt.copy(lookTarget);
+    target.pitch = pitch;
+    return target;
+  }
 
   return {
     position: camPos,
